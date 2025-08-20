@@ -1,0 +1,40 @@
+pragma language_version 0.25.0;
+
+import CompactStandardLibrary;
+import "auth";
+
+type TournamentId = Bytes<16>;
+type PlayerId = Bytes<16>;
+type Timestamp = Uint<64>;
+type U32 = Uint<32>;
+type Hash256 = Bytes<32>;
+
+enum Status {
+  Created,
+  Cancelled,
+  OutcomeDeclared,
+  PayoutPlanned,
+  PayoutCompleted
+}
+
+export struct Placement {
+  id: PlayerId,
+  points: U32
+}
+
+// A list of player ids and their points earned (thus placement) in the tournament
+export struct Outcome {
+  placements: List<Placement>
+}
+
+// Current status of any tournamnets registered with the contract
+export ledger status: Map<TournamentId, Status>;
+
+// Outcome of any tournaments (status in (OutcomeDeclared, PayoutPlanned, PayoutComplete)
+export ledger outcome: Map<TournamentId, Outcome>;
+
+// Merkle Root Hash of the planned payout distribution for each tournament
+export ledger plan: Map<TournamentId, Hash256>;
+
+// Merkle Root Hash of the payout receipts for each tournament
+export ledger receipts: Map<TournamentId, Hash256>;

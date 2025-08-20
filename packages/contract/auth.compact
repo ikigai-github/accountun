@@ -1,0 +1,48 @@
+pragma language_version 0.25.0;
+
+import CompactStandardLibrary;
+
+type Hash256 = Bytes<32>;
+
+module Auth {
+  // Keep the public key a changing
+  export ledger round: Counter;
+
+  export ledger authority: Hash256;
+
+  export circuit initializeAuthority(secret: Hash256): [] {
+    authority = disclose(publicKey(round, secret));
+  }
+
+  export circuit useAuthority(): [] {
+    checkAuthority();
+    round.increment(1);
+    authority = disclose(publicKey(round, privateKey()));
+  }
+
+  export circuit rotateAuthority(): [] {
+    checkAuthority();
+    round.increment(1);
+    authority = disclose(publicKey(round, replacementKey()));
+  }
+
+  pure circuit publicKey(round: Field, secretKey: Hash256): Hash256 {
+    return persistentHash<Vector<3, Hash256>>([ 
+      pad(32, "ascent:tournament"), 
+      round as Bytes<32>, 
+      secretKey
+    ]);
+  }
+
+  circuit checkAuthority(): [] {
+    const secretKey = privateKey();
+    const currentAuthority = publicKey(round, secretKey);
+    assert(authority == currentAuthority, "Invalid private key for current round");
+  }
+
+  witness privateKey(): Hash256;
+  witness replacementKey(): Hash256;
+}
+
+
+
