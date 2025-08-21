@@ -2,5 +2,10 @@
   "name": "accountun",
   "version": "0.1.0",
   "type": "module",
-  "workspaces": ["packages/*"]
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "bun run --filter contract compile"
+  }
 }

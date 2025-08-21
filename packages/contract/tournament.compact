@@ -1,15 +1,10 @@
-pragma language_version 0.25.0;
+pragma language_version 0.17.0;
 
 import CompactStandardLibrary;
 import "auth";
 
-type TournamentId = Bytes<16>;
-type PlayerId = Bytes<16>;
-type Timestamp = Uint<64>;
-type U32 = Uint<32>;
-type Hash256 = Bytes<32>;
-
 enum Status {
+  None,
   Created,
   Cancelled,
   OutcomeDeclared,
@@ -17,24 +12,39 @@ enum Status {
   PayoutCompleted
 }
 
-export struct Placement {
-  id: PlayerId,
-  points: U32
-}
-
-// A list of player ids and their points earned (thus placement) in the tournament
-export struct Outcome {
-  placements: List<Placement>
-}
-
 // Current status of any tournamnets registered with the contract
-export ledger status: Map<TournamentId, Status>;
+export ledger status: Map<Bytes<16>, Status>;
 
-// Outcome of any tournaments (status in (OutcomeDeclared, PayoutPlanned, PayoutComplete)
-export ledger outcome: Map<TournamentId, Outcome>;
+// Map Tournament ID -> Ordered (By Placement) List Of Player Ids
+// Note: Not sure this is needed could just be another shielded part and take up less space
+export ledger placements: Map<Bytes<16>, List<Bytes<16>>>;
 
 // Merkle Root Hash of the planned payout distribution for each tournament
-export ledger plan: Map<TournamentId, Hash256>;
+export ledger plan: Map<Bytes<16>, Bytes<32>>;
 
 // Merkle Root Hash of the payout receipts for each tournament
-export ledger receipts: Map<TournamentId, Hash256>;
+export ledger receipts: Map<Bytes<16>, Bytes<32>>;
+
+
+// Create a new tournament
+export circuit createTournament(id: Bytes<16>): [] {
+  useAuthority();
+  const publicId = disclose(id);
+  const tournamentStatus = status.lookup(publicId);
+  assert(tournamentStatus == Status.None, "Tournament already exists");
+
+  status.insert(publicId, Status.Created);
+}
+
+// Declare an outcome
+export circuit declareOutcome(id: Bytes<16>, placements: List<Bytes<16>>): [] {
+  useAuthority();
+
+  const publicId = disclose(id);
+  const tournamentStatus = status.lookup(publicId);
+  assert(tournamentStatus == Status.Created, "Tournament is not in a valid state to declare an outcome");
+
+  placements.insert(publicId, placements);
+
+
+}
