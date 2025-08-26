@@ -7,44 +7,94 @@ enum Status {
   None,
   Created,
   Cancelled,
-  OutcomeDeclared,
   PayoutPlanned,
+  OutcomeDeclared,
   PayoutCompleted
 }
 
 // Current status of any tournamnets registered with the contract
 export ledger status: Map<Bytes<16>, Status>;
 
-// Map Tournament ID -> Ordered (By Placement) List Of Player Ids
-// Note: Not sure this is needed could just be another shielded part and take up less space
-export ledger placements: Map<Bytes<16>, List<Bytes<16>>>;
+// Map Tournament ID -> Array of Player IDs (Max of 16 placements can be recorded)
+export ledger placements: Map<Bytes<16>, Vector<16, Bytes<16>>>;
 
-// Merkle Root Hash of the planned payout distribution for each tournament
-export ledger plan: Map<Bytes<16>, Bytes<32>>;
+// Merkle Root of the plan for prize distribution 
+export ledger planRoot: Map<Bytes<16>, Bytes<32>>;
 
 // Merkle Root Hash of the payout receipts for each tournament
-export ledger receipts: Map<Bytes<16>, Bytes<32>>;
+export ledger receiptsRoot: Map<Bytes<16>, Bytes<32>>;
 
+// Merkle Root Hash of the funding contributions for each tournament
+export ledger fundingRoot: Map<Bytes<16>, Bytes<32>>;
+
+// Set initial authority
+constructor(secret: Bytes<32>) {
+  initializeAuthority(secret);
+}
 
 // Create a new tournament
 export circuit createTournament(id: Bytes<16>): [] {
-  useAuthority();
-  const publicId = disclose(id);
-  const tournamentStatus = status.lookup(publicId);
-  assert(tournamentStatus == Status.None, "Tournament already exists");
+  useAuthority(); 
 
-  status.insert(publicId, Status.Created);
+  const tournamentId = disclose(id);
+  const state = status.lookup(tournamentId);
+  assert(state == Status.None, "Tournament with given id already exists");
+
+  status.insert(tournamentId, Status.Created);
 }
 
-// Declare an outcome
-export circuit declareOutcome(id: Bytes<16>, placements: List<Bytes<16>>): [] {
+// Record (or update) funding before the plan is committed
+export circuit recordFunding(id: Bytes<16>, root: Bytes<32>): [] {
   useAuthority();
 
-  const publicId = disclose(id);
-  const tournamentStatus = status.lookup(publicId);
-  assert(tournamentStatus == Status.Created, "Tournament is not in a valid state to declare an outcome");
+  const tournamentId = disclose(id);
+  const state = status.lookup(tournamentId);
+  assert(state == Status.Created, "Funding can only be recorded while tournament is still in created state");
 
-  placements.insert(publicId, placements);
+  fundingRoot.insert(tournamentId, disclose(root));
+}
+
+// Plan is how funding will be distributed among competitors
+export circuit commitPlan(id: Bytes<16>, root: Bytes<32>): [] {
+  useAuthority();
+  
+  const tournamentId = disclose(id);
+  const state = status.lookup(tournamentId);
+  assert(state == Status.Created, "Plan must be committed while tournament is still in created state");
+
+  planRoot.insert(tournamentId, disclose(root));
+  status.insert(tournamentId, Status.PayoutPlanned);
+}
 
 
+export circuit declareOutcome(id: Bytes<16>, winners: Vector<16, Bytes<16>>): [] {
+  useAuthority();
+
+  const tournamentId = disclose(id);
+  const state = status.lookup(tournamentId);
+  assert(state == Status.PayoutPlanned, "Outcome requires tournament have a payout plan");
+
+  placements.insert(tournamentId, disclose(winners));
+  status.insert(tournamentId, Status.OutcomeDeclared);
+}
+
+export circuit recordReceipts(id: Bytes<16>, root: Bytes<32>): [] {
+  useAuthority();
+
+  const tournamentId = disclose(id);
+  const state = status.lookup(tournamentId);
+  assert(state == Status.OutcomeDeclared, "Receipts can only be recorded after outcome is declared");
+
+  receiptsRoot.insert(tournamentId, disclose(root));
+}
+
+export circuit cancel(id: Bytes<16>): [] {
+  useAuthority();
+
+  const tournamentId = disclose(id);
+  const state = status.lookup(tournamentId);
+  assert(state == Status.Created, "Only unplanned tournaments can be cancelled");
+  assert(fundingRoot.member(tournamentId) == false, "Cannot cancel after funding is recorded");
+  
+  status.insert(tournamentId, Status.Cancelled);
 }
