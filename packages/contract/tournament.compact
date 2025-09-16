@@ -5,148 +5,124 @@ import "auth";
 import "tree";
 
 enum Status {
-  None,
   Registered,
   OutcomeDeclared,
   EntitlementsCommitted,
+  Cancelling,
   PayoutCompleted,
-  Cancelled
 }
 
+struct CashLeaf {
+  domain: Bytes<1>;
+  timestamp: Bytes<8>;
+  entityId: Bytes<16>;
+  amount: Uint<64>;
+}
 
+struct NonCashLeaf {
+  domain: Bytes<1>;
+  timestamp: Bytes<8>;
+  entityId: Bytes<16>;
+  assetId: Bytes<32>;
+  amount: Uint<64>;
+}
+  
+  
+const empty = 0x00 as Bytes<32>;
 
-// Current status of any tournaments registered with the contract
-export ledger status: Map<Bytes<16>, Status>;
+export sealed ledger tournamentId: Bytes<16>;
+export sealed ledger cashAssetId: Bytes<32>;
+export ledger status: Status;
+export ledger placements: Vector<MAX_PLACEMENTS, Bytes<16>>;
+export ledger cashFunding: MerkleTree<8, LeafNode>;
+export ledger fundingCount: Uint<8>;
+export ledger entitlements: MerkleTree<8, LeafNode>;
+export ledger entitlementsCount: Uint<8>;
+export ledger receipts: MerkleTree<8, LeafNode>;
+export ledger receiptsCount: Uint<8>;
 
-// Map Tournament ID -> Array of Player IDs (Max of 16 placements can be recorded)
-export ledger placements: Map<Bytes<16>, Vector<16, Bytes<16>>>;
-
-// Merkle Root Hash of the funding contributions for each tournament
-export ledger fundingRoots: Map<Bytes<16>, MerkleTreeDigest>;
-
-// Merkle Root of post-outcome per-recipient entitlements
-export ledger entitlementsRoots: Map<Bytes<16>, MerkleTreeDigest>;
-
-// Merkle Root Hash of the payout receipts for each tournament
-export ledger receiptsRoots: Map<Bytes<16>, MerkleTreeDigest>;
-
-// Commitment to the total cash proven at completion/cancellation
-export ledger prizePoolSum: Map<Bytes<16>, Bytes<32>>;
-
-
-// Set initial authority
-constructor(secret: Bytes<32>) {
+constructor(tournamentId: Bytes<16>, cashAssetId: Bytes<32>, secret: Bytes<32>) {
   initializeAuthority(secret);
+  status = Status.Registered;
+  tournamentId = disclose(tournamentId);
+  cashAssetId = disclose(cashAssetId);
 }
 
-// Register a tournament
-export circuit registerTournament(id: Bytes<16>): [] {
-  useAuthority(); 
-
-  const tournamentId = disclose(id);
-  const state = status.lookup(tournamentId);
-  assert(state == Status.None, "Tournament with given id already exists");
-
-  status.insert(tournamentId, Status.Registered);
-}
-
-// Record (or update) funding before the outcome is declared
-export circuit recordFunding(id: Bytes<16>, root: MerkleTreeDigest): [] {
+export circuit recordFunding(hash: Bytes<32>): [] {
   useAuthority();
 
-  const tournamentId = disclose(id);
-  const state = status.lookup(tournamentId);
-  assert(state == Status.Registered, "Funding can only be recorded while tournament is still in newly registered state");
+  assert(status == Status.Registered, "Funding can only be recorded while tournament is still in newly registered state");
 
-  fundingRoots.insert(tournamentId, disclose(root));
+  funding.insert(tournamentId, disclose(hash));
+  fundingCount += 1;
 }
 
-export circuit declareOutcome(id: Bytes<16>, winners: Vector<16, Bytes<16>>): [] {
+export circuit declareOutcome(winners: Vector<64, Bytes<16>>): [] {
   useAuthority();
 
-  const tournamentId = disclose(id);
-  const state = status.lookup(tournamentId);
-  assert(state == Status.Registered, "Outcome can only be declared while tournament is in newly registered state");
-
-  const fundingPresent = fundingRoots.member(tournamentId);
-  assert(fundingPresent == true, "Outcome requires tournament to have recorded funding");
+  assert(status == Status.Registered, "Outcome can only be declared while tournament is in newly registered state");
 
   const disclosedWinners = disclose(winners);
   placements.insert(tournamentId, disclosedWinners);
-  status.insert(tournamentId, Status.OutcomeDeclared);
+  status = Status.OutcomeDeclared;
 }
 
-// Commit post-outcome entitlements (per-recipient amounts / items)
-// This is the authoritative mapping from outcome to recipients
-export circuit commitEntitlements(id: Bytes<16>, root: MerkleTreeDigest): [] {
+export circuit commitEntitlements(hashes: Vector<8, Bytes<32>>, final: Boolean): [] {
   useAuthority();
 
-  const tournamentId = disclose(id);
-  const state = status.lookup(tournamentId);
   assert(state == Status.OutcomeDeclared, "Entitlements require outcome to be declared");
 
-  const entitlementRoot = disclose(root);
-  entitlementsRoots.insert(tournamentId, entitlementRoot);
+  for (const hash of hashes) {
+    if(hash != empty) {
+      entitlements.insertHash(tournamentId, disclose(hash));
+      entitlementsCount += 1;
+    }
+  }
 
-  status.insert(tournamentId, Status.EntitlementsCommitted);
+  if (final) {
+    status = Status.EntitlementsCommitted;
+  }
 }
 
-// Record receipts of actual payouts (primary + Dust bonus)
-// Requires entitlements to be committed for normal flow; also allowed for cancellation path
-export circuit recordReceipts(id: Bytes<16>, root: MerkleTreeDigest): [] {
+export circuit recordReceipts(hashes: Vector<8, Bytes<32>>): [] {
   useAuthority();
 
-  const tournamentId = disclose(id);
-  const state = status.lookup(tournamentId);
-
-  const allowedAfterEntitlements = (state == Status.EntitlementsCommitted);
-  const allowedForCancellation = (state == Status.Registered);
+  const allowedAfterEntitlements = (status == Status.EntitlementsCommitted);
+  const allowedForCancellation = (status == Status.Cancelling);
   const receiptsAllowed = allowedAfterEntitlements || allowedForCancellation;
-  assert(receiptsAllowed == true, "Receipts allowed after entitlements or for cancellation");
+  assert(receiptsAllowed, "Receipts allowed after entitlements or for cancellation");
 
-  const receiptRoot = disclose(root);
-  receiptsRoots.insert(tournamentId, receiptRoot);
+  for (const hash of hashes) {
+    if (hash != empty) {
+      receiptsRoots.insertHash(tournamentId, disclose(hash));
+      receiptsCount += 1;
+    }
+  }
 }
 
 export circuit finalizePayout(id: Bytes<16>, hashedSum: Bytes<32>): [] {
   useAuthority();
 
-  const tournamentId = disclose(id);
-  const state = status.lookup(tournamentId);
-  assert(state == Status.EntitlementsCommitted, "Tournament must be in entitlements committed state to complete payout");
+  assert(status == Status.EntitlementsCommitted || status == Status.Cancelling, "Payout can only be finalized after entitlements are committed or for cancellation");
 
-  const fundingPresent = fundingRoots.member(tournamentId);
-  assert(fundingPresent == true, "Funding root is required");
+  // TODO: Prove payout complete by showing funding and receipts balance 
 
-  const receiptsPresent = receiptsRoots.member(tournamentId);
-  assert(receiptsPresent == true, "Receipts root is required");
 
-  const entitlementsPresent = entitlementsRoots.member(tournamentId);
-  assert(entitlementsPresent == true, "Entitlements root is required");
-
-  const fundingDigest = fundingRoots.lookup(tournamentId);
-  const receiptsDigest = receiptsRoots.lookup(tournamentId);
-  const disclosedSumHash = disclose(hashedSum);
-
-  // const payoutComplete = provePayoutComplete(fundingDigest, receiptsDigest, disclosedSumHash);
-  // assert(payoutComplete == true, "Cannot prove prize pool is fully accounted for");
-
-  prizePoolSum.insert(tournamentId, disclosedSumHash);
-  status.insert(tournamentId, Status.PayoutCompleted);
+  status = Status.PayoutCompleted;
 }
 
 // Only unplanned tournaments can be cancelled (no funding recorded)
-export circuit cancelEmpty(id: Bytes<16>): [] {
+export circuit cancel(): [] {
   useAuthority();
 
-  const tournamentId = disclose(id);
-  const state = status.lookup(tournamentId);
-  assert(state == Status.Registered, "Cancel only before outcome");
 
-  const fundingPresent = fundingRoots.member(tournamentId);
-  assert(fundingPresent == false, "Cannot cancel without proof after funding is recorded");
-  
-  status.insert(tournamentId, Status.Cancelled);
+  const allowedForNoFunds = status == Status.Registered && fundingCount == 0;
+  assert(allowedForNoFunds, "Can only cancel unplanned tournaments with no funding");
+
+  // TODO: Allow for funded tournament to be cancelled by proving all funding is refunded (with receipts)
+  //  Registered -> Cancelling -> PayoutCompleted -> Cancelled
+
+  status = Status.Cancelled;
 }
 
 // Funded cancellation: show receipts that balance funding (refunds/rollover as receipts)
