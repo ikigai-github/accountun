@@ -5,7 +5,9 @@
   "workspaces": [
     "packages/*"
   ],
-  "scripts": {
-    "dev": "bun run --filter contract compile"
+  "scripts": {    
+    "standalone": "docker compose stop && docker compose up -d",
+    "proof-testnet": "PROOF_SERVER_CMD='midnight-proof-server --network testnet' docker compose up -d proof-server",
+    "compile": "bun run --filter @accountun/contract compile"
   }
 }

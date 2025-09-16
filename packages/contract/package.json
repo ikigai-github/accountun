@@ -1,15 +1,19 @@
 {
-  "name": "contract",
+  "name": "@accountun/contract",
   "module": "index.ts",
   "type": "module",
   "private": true,
   "scripts": {
-    "compile": "compactc tournament.compact dist"
+    "compile": "compactc tournament.compact managed"
   },
   "devDependencies": {
     "@types/bun": "latest"
   },
   "peerDependencies": {
     "typescript": "^5"
+  },
+  "dependencies": {
+    "@midnight-ntwrk/compact-runtime": "^0.8.1",
+    "@noble/hashes": "^2.0.0"
   }
 }

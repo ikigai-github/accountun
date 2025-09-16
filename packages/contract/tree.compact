@@ -1,0 +1,31 @@
+
+module tree {
+  import CompactStandardLibrary;
+
+  struct LeafNode {
+    domain: Bytes<1>;
+    timestamp: Bytes<8>;
+    entityId: Bytes<16>;
+    assetId: Bytes<32>;
+    amount: Uint<64>;
+  }
+
+  export pure circuit hashLeaf(leaf: LeafNode): Bytes<32> {
+    return persistentHash<LeafNode>(leaf);
+  }
+
+  export pure circuit sumLeaves<Nat>(leaves: Vector<Nat, LeafNode>): Uint<64> {
+    const amounts = map((leaf) => leaf.amount, leaves);
+    const sum = fold((a, b) => (a + b) as Uint<64>, 0 as Uint<64>, amounts);
+    return sum;
+  }
+
+  export pure circuit parentHash(left: Bytes<32>, right: Bytes<32>): Bytes<32> {
+    return persistentHash<Vector<2, Bytes<32>>>([left, right]);
+  }
+
+  export pure circuit computeRoot<Nat>(leaves: Vector<Nat, LeafNode>): Bytes<32> {
+    const leafHashes = map(hashLeaf, leaves);
+
+  }
+}

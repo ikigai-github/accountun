@@ -1,8 +1,7 @@
 {
-  "name": "@accountun/api",
+  "name": "@accountun/common",
   "module": "index.ts",
   "type": "module",
-  "private": true,
   "devDependencies": {
     "@types/bun": "latest"
   },

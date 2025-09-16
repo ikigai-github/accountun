@@ -1,7 +1,6 @@
 module auth {
   import CompactStandardLibrary;
 
-
   export ledger round: Counter;
 
   export ledger authority: Bytes<32>;

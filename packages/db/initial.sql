@@ -25,7 +25,7 @@ CREATE TABLE gauntlet_sponsor_contribution_item (
   fingerprint TEXT            
 );
 
-CREATE TABLE gauntlet_payout_plan (
+CREATE TABLE gauntlet_entitlement (
   id                   UUID PRIMARY KEY, 
   gauntlet_id          UUID NOT NULL REFERENCES gauntlet(id) ON DELETE CASCADE,
   recipient_hash       BYTEA NOT NULL CHECK (octet_length(recipient_hash) = 32),
@@ -36,7 +36,7 @@ CREATE TABLE gauntlet_payout_plan (
   created_at           TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE gauntlet_payout_plan_cash (
+CREATE TABLE gauntlet_entitlement_cash (
   id            UUID PRIMARY KEY REFERENCES gauntlet_payout_plan(id) ON DELETE CASCADE,
   amount        BIGINT NOT NULL CHECK (amount >= 0),
   amount_salt   BYTEA  NOT NULL,
@@ -44,7 +44,7 @@ CREATE TABLE gauntlet_payout_plan_cash (
   currency      TEXT   NOT NULL
 );
 
-CREATE TABLE gauntlet_payout_plan_item (
+CREATE TABLE gauntlet_entitlement_item (
   id          UUID PRIMARY KEY REFERENCES gauntlet_payout_plan(id) ON DELETE CASCADE,
   tag         TEXT NOT NULL,   
   quantity    INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0),
@@ -64,7 +64,7 @@ CREATE TABLE gauntlet_tree_snapshot (
   UNIQUE (gauntlet_id, kind, root)
 );
 
-CREATE TABLE gauntlet_snapshot_leaf (
+CREATE TABLE gauntlet_tree_leaf (
   snapshot_id  BIGINT NOT NULL REFERENCES gauntlet_tree_snapshot(id) ON DELETE CASCADE,
   leaf_index   INTEGER NOT NULL,      
   leaf_hash    BYTEA NOT NULL CHECK (octet_length(leaf_hash) = 32),

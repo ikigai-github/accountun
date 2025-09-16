@@ -1,7 +1,9 @@
 # dependencies (bun install)
 node_modules
 
+
 # output
+managed
 out
 dist
 *.tgz
