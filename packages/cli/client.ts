@@ -1,18 +1,67 @@
-// packages/cli/clients.ts (or keep inside your CLI file)
-import { startServiceWallet, saveServiceWallet } from "./wallet";
-import { witnesses, type PrivateState } from "@accountun/contract/witnesses";
-import ContractClient from "@accountun/contract/managed/contract/index.cjs";
-import { CONFIG } from "./config";
-import { bytes32FromHex } from "@accountun/common";
+import {
+  createContract,
+  buildWallet,
+  createProviders,
+  withWallet,
+} from "@accountun/contract";
 
-export async function loadClient() {
-  // const wallet = await startServiceWallet();
-  // const secretKey = bytes32FromHex(CONFIG.AUTH_SECRET_HEX);
-  // const contract = new ContractClient({ witnesses });
-  // return {
-  //   contract,
-  //   wallet,
-  //   witnesses,
-  //   save: () => saveServiceWallet(wallet),
-  // };
+import { getConfig } from "./config";
+
+export type MidnightClient = Awaited<ReturnType<typeof initializeClient>>;
+
+/**
+ * Creates and initializes a Midnight client with configuration, providers, contract, wallet, and private state.
+ * This will start the wallet which will need to be closed later with wallet.close().
+ * @returns An initialized Midnight client with config, providers, contract, wallet, and private state
+ */
+export async function initializeClient() {
+  const config = getConfig();
+  const wallet = await buildWallet(config);
+
+  wallet.start();
+
+  const providers = await createProviders(config, wallet);
+
+  const secretKey = config.authSecret;
+  const replacementKey = config.authReplacementKey ?? config.authSecret;
+  const contract = createContract();
+
+  return {
+    config,
+    providers,
+    contract,
+    wallet,
+    privateState: { secretKey, replacementKey },
+  };
+}
+
+/**
+ * Convenience wrapper that initializes a Midnight client, invokes a function, and then closes the wallet.
+ * @param fn function to invoke using the initialized client
+ * @returns the result of the function invocation
+ */
+export async function withClient<T>(
+  fn: (client: MidnightClient) => Promise<T>,
+): Promise<T> {
+  const config = getConfig();
+  return withWallet(config, async (wallet) => {
+    const providers = await createProviders(config, wallet);
+
+    // Ensure wallet state is saved on disk
+    //await saveWallet(config.stateDir, wallet);
+
+    const secretKey = config.authSecret;
+    const replacementKey = config.authReplacementKey ?? config.authSecret;
+    const contract = createContract();
+
+    const client: MidnightClient = {
+      config,
+      providers,
+      contract,
+      wallet,
+      privateState: { secretKey, replacementKey },
+    };
+
+    return fn(client);
+  });
 }

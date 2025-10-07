@@ -1,0 +1,63 @@
+/**
+  * Domain types for tournament contract
+  */
+module Domain {
+  import CompactStandardLibrary;
+
+  /**
+    * The overall state of a tournament prize pool accounting with substates
+    * that can be determined by the presence of data (e.g. funding, entitlements, receipts).
+    *
+    * State Transitions:
+    * - Registered -> ResultPosted -> PayoutReady -> PayoutComplete
+    * - Registered -> NoResults -> PayoutReady -> PayoutComplete
+    * - Registered -> Cancelled  (no funding)
+    */
+  export enum TournamentState {
+    None,           // Initial state before registration
+    Registered,     // Chain has been made aware of tournament but has no funding
+    ResultPosted,   // Results of the tournament have been posted
+    PayoutReady,    // A plan for how funds from the tournament prize pool will be distributed
+    NoResults,      // Tournament was not completed so funds can be returned or reallocated
+    PayoutComplete, // Payout has been completed
+    Cancelled       // Tournament was cancelled before any results were posted or funds contributed
+  }
+
+  /**
+    * The kind of an entry leaf in the Merkle tree
+    */
+  export enum AccountKind {
+    Funding,
+    Payouts,
+    Receipt,
+  }
+  
+  /**
+    *  A preimage ledger entry used in a Merkle tree representing a currency prize, entitlement, or funding contribution
+    */
+  export struct CurrencyEntry {
+    kind: AccountKind;
+    timestamp: Bytes<8>;
+    entityId: Bytes<32>;
+    salt: Bytes<32>;
+    amount: Uint<64>;
+  }
+  
+  // TODO: Add support for non-cash prizes (e.g. NFTs, physical items, etc)
+  // struct NonCashLeaf {
+  //   domain: Domain;
+  //   timestamp: Bytes<8>;
+  //   entityId: Bytes<32>;
+  //   assetId: Bytes<32>;
+  //   salt: Bytes<32>;
+  //   quantity: Uint<32>;
+  // }
+
+  export struct Hash256 {
+    value: Bytes<32>;
+  }
+
+  export struct Uuid {
+    value: Bytes<16>;
+  }
+}

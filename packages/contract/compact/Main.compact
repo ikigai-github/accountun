@@ -1,0 +1,25 @@
+pragma language_version >= 0.17.0;
+
+// Tournament with 16 max placements and 8 levels in the account Merkle trees
+import Accounting<16, 8>;
+
+// To export the rotateAuthority circuit
+import Auth;
+
+/**
+  * Main entry point for the tournament contract
+  */
+constructor(secret: Bytes<32>) {
+  initializeAccounting(secret);
+}
+
+export {
+  registerTournament,
+  recordFunding,
+  postResults,
+  planPayouts,
+  recordReceipts,
+  payoutComplete,
+  cancelTournament,
+  rotateAuthority
+}

@@ -1,0 +1,88 @@
+/**
+  * Authority management for tournament contract
+  */
+module Auth {
+  import CompactStandardLibrary;
+
+  /**
+    * Monotonically increasing number to ensure single use of public keys
+    */
+  export ledger round: Counter;
+
+  /**
+    * Public key constructed from current round and secret representing the current authority
+    */
+  export ledger authority: Bytes<32>;
+
+  /**
+    * Initialize the authority with the provided secret key.
+    *
+    * This sets the authority to the public key derived from the initial round (0) and the secret.
+    * This function should be called only once during contract initialization.
+    *
+    * @param secret - The secret key used to derive the initial authority public key.
+    */
+  export circuit initializeAuthority(secret: Bytes<32>): [] {
+    authority = disclose(publicKey(round, secret));
+  }
+
+  /**
+    * @circuit useAuthority
+    * @description Verify the provided secret key matches the current authority and
+    * increment the round to change the public key for future operations.
+    */
+  export circuit useAuthority(): [] {
+    checkAuthority();
+    round.increment(1);
+    authority = disclose(publicKey(round, privateKey()));
+  }
+
+  /**
+    * @circuit rotateAuthority
+    * @description Rotate the authority to a new private key derived from the next round
+    * and a new secret key. This function allows changing the authority without
+    * needing to reveal the current secret key.
+    */
+  export circuit rotateAuthority(): [] {
+    checkAuthority();
+    round.increment(1);
+    authority = disclose(publicKey(round, replacementKey()));
+  }
+
+  /**
+    * @circuit publicKey
+    * @description Derive a public key from the given round and secret key.
+    * The public key is computed as a persistent hash of the concatenation of
+    * a fixed prefix, the round number, and the secret key.
+    *
+    * @param round - The current round number.
+    * @param secretKey - The secret key used to derive the public key.
+    * @returns The derived public key as a Bytes<32>.
+    */
+  pure circuit publicKey(round: Field, secretKey: Bytes<32>): Bytes<32> {
+    return persistentHash<Vector<3, Bytes<32>>>([ 
+      pad(32, "ascent:tournament"), 
+      round as Bytes<32>, 
+      secretKey
+    ]);
+  }
+
+  /**
+    * @circuit checkAuthority
+    * @description Verify that the provided secret key corresponds to the current authority public key.
+    * This is done by deriving the public key from the current round and the provided secret key,
+    * and asserting it matches the stored authority.
+    */
+  circuit checkAuthority(): [] {
+    const secretKey = privateKey();
+    const currentAuthority = publicKey(round, secretKey);
+    assert(authority == currentAuthority, "Invalid private key for current round");
+  }
+
+  /** Witnesses for providing private keys used in authority operations */
+  witness privateKey(): Bytes<32>;
+  witness replacementKey(): Bytes<32>;
+}
+
+
+

@@ -1,0 +1,211 @@
+/**
+  * A contract for managing tournament prize pools, including funding,
+  * result posting, payout planning, and payout finalization.
+  *
+  * The contract uses Merkle trees to efficiently manage and verify large sets of
+  * funding contributions, entitlements, and receipts.
+  */
+module Accounting<#MaxPlacements, #AccountTreeDepth> {
+  import CompactStandardLibrary;
+
+  import "Auth";
+  import "Domain";
+  import "Utils";
+
+  /**
+    * Map of the asset ID representing the currency used for all cash prizes and funding in keyed tournament
+    */
+  export ledger currencyAssetIds: Map<Bytes<16>, Bytes<32>>;
+
+  /**
+    * Map of the current state of the tournament, governing what operations are allowed in keyed tournament
+    */
+  export ledger states: Map<Bytes<16>, TournamentState>;
+
+  /**
+    * Map of the ordered list of player or team IDs representing final placements in the keyed tournament
+    */
+  export ledger placements: Map<Bytes<16>, Vector<MaxPlacements, Bytes<16>>>;
+
+  /**
+    * Map of merkle trees for funding contributions, entitlements, and receipts in keyed tournament
+    */
+  export ledger fundingTrees: Map<Bytes<16>, MerkleTree<AccountTreeDepth, Bytes<32>>>;
+  export ledger fundingCounts: Map<Bytes<16>, Counter>;
+  export ledger entitlementsTrees: Map<Bytes<16>, MerkleTree<AccountTreeDepth, Bytes<32>>>;
+  export ledger entitlementsCounts: Map<Bytes<16>, Counter>;
+  export ledger receiptsTrees: Map<Bytes<16>, MerkleTree<AccountTreeDepth, Bytes<32>>>;
+  export ledger receiptsCounts: Map<Bytes<16>, Counter>;
+
+  /**
+    * Initialize the tournament accounting with the authority secret.
+    * This sets the initial state to Registered and initializes the authority for managing
+    * the tournament lifecycle.
+    *
+    * @param secret - The secret key used to derive the initial authority public key.
+    */
+  export circuit initializeAccounting(secret: Bytes<32>): [] {
+    initializeAuthority(secret);
+  }
+
+  /**
+    * Register a new tournament with the given ID and asset ID.
+    * This function can only be called by the current authority and
+    * ensures that the tournament ID is unique.
+    *
+    * @param id - The unique identifier for the tournament.
+    * @param assetId - The asset ID representing the currency used for cash prizes and funding.
+    */
+  export circuit registerTournament(id: Bytes<16>, assetId: Bytes<32>): [] {
+    const tournamentId = disclose(id);
+    const disclosedAssetId = disclose(assetId);
+
+    assert(!states.member(tournamentId), "Tournament with this ID already registered");
+
+    useAuthority();
+    
+    states.insert(tournamentId, TournamentState.Registered);
+    currencyAssetIds.insert(tournamentId, disclosedAssetId);
+  }
+
+  /**
+    * Record a funding contribution to the tournament prize pool.
+    * The contribution is represented by a hash of a CurrencyEntry preimage.
+    * Funding can only be recorded while the tournament is in the Registered state.
+    *
+    * @param id - The unique identifier for the tournament.
+    * @param hash - The hash of the CurrencyEntry representing the funding contribution.
+    */
+  export circuit recordFunding(id: Bytes<16>, hash: Bytes<32>): [] {
+    const tournamentId = disclose(id);
+    const disclosedHash = disclose(hash);
+    const state = states.lookup(tournamentId);
+
+    assert(state == TournamentState.Registered, "Funding can only be recorded while tournament is still in newly registered state");
+
+    useAuthority();
+
+    fundingTrees.lookup(tournamentId).insertHash(disclose(hash));
+    fundingCounts.lookup(tournamentId).increment(1);
+  }
+
+  /**
+    * Post the results of the tournament, represented as an ordered list of player or team IDs.
+    * Results can only be posted while the tournament is in the Registered state.
+    *
+    * @param id - The unique identifier for the tournament.
+    * @param results - The ordered list of player or team IDs representing final placements.
+    */
+  export circuit postResults(id: Bytes<16>, results: Vector<MaxPlacements, Bytes<16>>): [] {
+    const tournamentId = disclose(id);
+    const disclosedResults = disclose(results);
+    const state = states.lookup(tournamentId);
+
+    assert(state == TournamentState.Registered, "Results must be posted while tournament is in the registered state");
+
+    useAuthority();
+
+    placements.insert(tournamentId, disclosedResults);
+    states.insert(tournamentId, TournamentState.ResultPosted);
+  }
+
+  /**
+    * Plan the payouts for the tournament based on the provided list of entitlement hashes.
+    * Each hash represents a CurrencyEntry preimage for an entitlement.
+    * Payouts can only be planned after results have been posted or if the tournament has no results.
+    *
+    * @param id - The unique identifier for the tournament.
+    * @param hashes - The list of hashes representing entitlements to be added.
+    * @param ready - A boolean indicating if the payout plan is complete and ready for execution.
+    */
+  export circuit planPayouts(id: Bytes<16>, hashes: Vector<8, Bytes<32>>, ready: Boolean): [] {
+    const tournamentId = disclose(id);
+    const state = states.lookup(tournamentId);
+
+    assert(state == TournamentState.ResultPosted || state == TournamentState.NoResults, "Payouts require results to be posted");
+
+    useAuthority();
+
+    for (const hash of disclose(hashes)) {
+      if(hash != emptyHash()) {
+        entitlementsTrees.lookup(tournamentId).insertHash(disclose(hash));
+        entitlementsCounts.lookup(tournamentId).increment(1);
+      }
+    }
+
+    if (disclose(ready)) {
+      states.insert(tournamentId, TournamentState.PayoutReady);
+    }
+  }
+
+  /**
+    * Record receipts for completed payouts, represented by a list of receipt hashes.
+    * Each hash represents a CurrencyEntry preimage for a receipt.
+    * Receipts can only be recorded after the payout plan is marked as ready.
+    *
+    * @param id - The unique identifier for the tournament.
+    * @param hashes - The list of hashes representing receipts to be added.
+    */
+  export circuit recordReceipts(id: Bytes<16>, hashes: Vector<8, Bytes<32>>): [] {
+    const tournamentId = disclose(id);
+    const state = states.lookup(tournamentId);
+
+    assert(state == TournamentState.PayoutReady, "Receipts only allowed after payout ready");
+
+    useAuthority();
+
+    for (const hash of disclose(hashes)) {
+      if (hash != emptyHash()) {
+        receiptsTrees.lookup(tournamentId).insertHash(disclose(hash));
+        receiptsCounts.lookup(tournamentId).increment(1);
+      }
+    }
+  }
+
+  /**
+    * Mark the payout process as complete, indicating all entitlements have been paid out.
+    * This transitions the tournament state to PayoutComplete.
+    * Payout can only be marked complete from the PayoutReady state.
+    *
+
+    * 
+    * @param id - The unique identifier for the tournament.
+    */
+  export circuit payoutComplete(id: Bytes<16>): [] {
+    const tournamentId = disclose(id);
+    const state = states.lookup(tournamentId);
+    assert(state == TournamentState.PayoutReady, "Payout can only be marked complete from the ready state");
+    
+    // TODO: Want to prove the sum of receipts matches the sum of payout plan and sum of funding.
+
+    useAuthority();
+
+    states.insert(tournamentId, TournamentState.PayoutComplete);
+  }
+
+  /**
+    * Cancel the tournament, transitioning to the Cancelled state if no funding exists,
+    * or to the NoResults state if funding has been recorded.
+    *
+    * Cancellation can only occur while the tournament is in the Registered state
+    * and before any results have been posted.
+    *
+    * @param id - The unique identifier for the tournament.
+    */
+  export circuit cancelTournament(id: Bytes<16>): [] {
+    const tournamentId = disclose(id);
+    const state = states.lookup(tournamentId);
+    const fundingCount = fundingCounts.lookup(tournamentId);
+
+    assert(state == TournamentState.Registered, "Only tournaments without results can be cancelled");
+
+    useAuthority();
+
+    if(fundingCount > 0) {
+      states.insert(tournamentId, TournamentState.NoResults);
+    } else {
+      states.insert(tournamentId, TournamentState.Cancelled);
+    }
+  }
+
+}

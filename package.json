@@ -7,7 +7,8 @@
   ],
   "scripts": {    
     "standalone": "docker compose stop && docker compose up -d",
-    "proof-testnet": "PROOF_SERVER_CMD='midnight-proof-server --network testnet' docker compose up -d proof-server",
-    "compile": "bun run --filter @accountun/contract compile"
+    "testnet": "MIDNIGHT_NETWORK='testnet' docker compose up -d proof-server",
+    "compile": "bun run --filter @accountun/contract --elide-lines=0 compile",
+    "cli": "bun run --filter @accountun/cli --elide-lines=0 cli"
   }
 }

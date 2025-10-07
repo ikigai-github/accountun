@@ -1,7 +1,7 @@
 services:
   proof-server:
     image: "midnightnetwork/proof-server:4.0.0"
-    command: ${PROOF_SERVER_CMD:-}
+    command: ['midnight-proof-server --network ${MIDNIGHT_NETWORK:-undeployed}']
     ports:
       - "6300:6300"
     environment:

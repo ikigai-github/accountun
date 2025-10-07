@@ -1,16 +1,17 @@
+# Midnight specific generated or runtime files
+managed
+**/managed
+.state/
+midnight-level-db/
+**/midnight-level-db/
+
 # dependencies (bun install)
 node_modules
 
-
 # output
-managed
 out
 dist
 *.tgz
-
-# code coverage
-coverage
-*.lcov
 
 # logs
 logs
