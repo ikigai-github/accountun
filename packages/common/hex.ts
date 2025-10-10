@@ -73,6 +73,25 @@ export function bytesToHex(value: Uint8Array): string {
 }
 
 /**
+ * Converts a bigint to a hex string
+ * @param a the bigint to convert
+ * @param byteLength the desired byte length of the output hex string
+ * @returns The hex string representation of the bigint
+ */
+export function numberToHex(a: bigint | number, byteLength?: number): string {
+  if (a < 0)
+    throw RangeError(
+      "a should be a non-negative integer. Negative values are not supported",
+    );
+  let hex = a.toString(16);
+  if (byteLength) {
+    const padding = byteLength * 2 - hex.length;
+    if (padding > 0) hex = "0".repeat(padding) + hex;
+  }
+  return hex;
+}
+
+/**
  * Check two byte arrays for equality
  * @param a left byte array
  * @param b right byte array

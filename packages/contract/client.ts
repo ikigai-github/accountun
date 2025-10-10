@@ -3,18 +3,17 @@ import {
   buildWallet,
   createProviders,
   withWallet,
+  type MidnightClient,
 } from "@accountun/contract";
 
-import { getConfig } from "./config";
-
-export type MidnightClient = Awaited<ReturnType<typeof initializeClient>>;
+import { getConfig } from "../cli/config";
 
 /**
  * Creates and initializes a Midnight client with configuration, providers, contract, wallet, and private state.
  * This will start the wallet which will need to be closed later with wallet.close().
  * @returns An initialized Midnight client with config, providers, contract, wallet, and private state
  */
-export async function initializeClient() {
+export async function initializeClient(): Promise<MidnightClient> {
   const config = getConfig();
   const wallet = await buildWallet(config);
 

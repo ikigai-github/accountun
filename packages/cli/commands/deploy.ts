@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { deployContract as deploy, saveAddress } from "@accountun/contract";
-import { withClient } from "../client";
+import { withClient } from "@accountun/contract/client";
 
 export function registerDeployCommand(program: Command) {
   program
@@ -11,6 +11,8 @@ export function registerDeployCommand(program: Command) {
     .action(async () => {
       await withClient(async (client) => {
         const { config, privateState, contract, providers } = client;
+
+        console.log("ℹ Deploying contract for network:", config.network);
 
         const result = await deploy(
           privateState.secretKey,

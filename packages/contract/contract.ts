@@ -5,18 +5,19 @@ import {
   type DeployContractOptionsWithPrivateState,
 } from "@midnight-ntwrk/midnight-js-contracts";
 
-import {
-  PrivateStateKey,
-  type Contract,
-  type InitialStateParams,
-  type PrivateState,
-  type Providers,
+import type {
+  Contract,
+  InitialStateParams,
+  MidnightClient,
+  PrivateState,
+  Providers,
 } from "./types";
 import { witnesses } from "./witnesses";
 import type { ContractAddress } from "@midnight-ntwrk/compact-runtime";
 import { readFile, rotateWriteFile } from "@accountun/common";
 
 import path from "node:path";
+import { PrivateStateKey } from "./constants";
 
 export function createContract(): Contract {
   return new ManagedContract<PrivateState>(witnesses);
@@ -47,13 +48,13 @@ export async function deployContract(
 }
 
 /**
- * Utility wrapper to find and return a deployed contract instance
+ * Utility wrapper to find and return a deployed contract instance by a known address
  * @param contractAddress The address of the deployed contract to find
  * @param contract The contract instance to use when finding the associated deployed contract
  * @param providers The providers to use when finding the deployed contract
  * @returns The found deployed contract instance
  */
-export async function joinContract(
+export async function joinKnownContract(
   contractAddress: ContractAddress,
   contract: Contract,
   providers: Providers,
@@ -63,6 +64,23 @@ export async function joinContract(
     contract,
     privateStateId: PrivateStateKey,
   });
+}
+
+/**
+ * Utility wrapper to find and return a deployed contract instance using the saved address in the state directory
+ * @param context The Midnight client context containing configuration, contract, and providers
+ * @param options Optional parameters including an override address
+ * @returns The joined deployed contract instance
+ */
+export async function joinContract(
+  context: MidnightClient,
+  options?: { address?: string },
+) {
+  const address =
+    options?.address ??
+    (await loadAddress(context.config.stateDir, context.config.network));
+
+  return await joinKnownContract(address, context.contract, context.providers);
 }
 
 /**

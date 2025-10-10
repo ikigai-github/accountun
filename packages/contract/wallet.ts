@@ -10,7 +10,6 @@ import {
   filter,
   firstValueFrom,
   map,
-  scan,
   shareReplay,
   take,
   tap,

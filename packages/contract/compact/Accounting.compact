@@ -30,11 +30,11 @@ module Accounting<#MaxPlacements, #AccountTreeDepth> {
   /**
     * Map of merkle trees for funding contributions, entitlements, and receipts in keyed tournament
     */
-  export ledger fundingTrees: Map<Bytes<16>, MerkleTree<AccountTreeDepth, Bytes<32>>>;
+  export ledger fundingTrees: Map<Bytes<16>, MerkleTree<AccountTreeDepth, CurrencyEntry>>;
   export ledger fundingCounts: Map<Bytes<16>, Counter>;
-  export ledger entitlementsTrees: Map<Bytes<16>, MerkleTree<AccountTreeDepth, Bytes<32>>>;
+  export ledger entitlementsTrees: Map<Bytes<16>, MerkleTree<AccountTreeDepth, CurrencyEntry>>;
   export ledger entitlementsCounts: Map<Bytes<16>, Counter>;
-  export ledger receiptsTrees: Map<Bytes<16>, MerkleTree<AccountTreeDepth, Bytes<32>>>;
+  export ledger receiptsTrees: Map<Bytes<16>, MerkleTree<AccountTreeDepth, CurrencyEntry>>;
   export ledger receiptsCounts: Map<Bytes<16>, Counter>;
 
   /**
@@ -74,12 +74,12 @@ module Accounting<#MaxPlacements, #AccountTreeDepth> {
     * Funding can only be recorded while the tournament is in the Registered state.
     *
     * @param id - The unique identifier for the tournament.
-    * @param hash - The hash of the CurrencyEntry representing the funding contribution.
+    * @param entry - The CurrencyEntry representing the funding contribution.
     */
-  export circuit recordFunding(id: Bytes<16>, hash: Bytes<32>): [] {
+  export circuit recordFunding(id: Bytes<16>, entry: CurrencyEntry): [] {
     const tournamentId = disclose(id);
-    const disclosedHash = disclose(hash);
     const state = states.lookup(tournamentId);
+    const hash = persistentHash<CurrencyEntry>(entry);
 
     assert(state == TournamentState.Registered, "Funding can only be recorded while tournament is still in newly registered state");
 
@@ -110,15 +110,14 @@ module Accounting<#MaxPlacements, #AccountTreeDepth> {
   }
 
   /**
-    * Plan the payouts for the tournament based on the provided list of entitlement hashes.
-    * Each hash represents a CurrencyEntry preimage for an entitlement.
+    * Plan the payouts for the tournament based on the provided list of currency entries.
     * Payouts can only be planned after results have been posted or if the tournament has no results.
     *
     * @param id - The unique identifier for the tournament.
-    * @param hashes - The list of hashes representing entitlements to be added.
+    * @param entries - The list of currency entries representing payouts to be added to the plan.
     * @param ready - A boolean indicating if the payout plan is complete and ready for execution.
     */
-  export circuit planPayouts(id: Bytes<16>, hashes: Vector<8, Bytes<32>>, ready: Boolean): [] {
+  export circuit planPayouts(id: Bytes<16>, entries: Vector<8, CurrencyEntry>, ready: Boolean): [] {
     const tournamentId = disclose(id);
     const state = states.lookup(tournamentId);
 
@@ -126,8 +125,10 @@ module Accounting<#MaxPlacements, #AccountTreeDepth> {
 
     useAuthority();
 
-    for (const hash of disclose(hashes)) {
-      if(hash != emptyHash()) {
+    for (const entry of entries) {
+      const kind = disclose(entry.kind);
+      if(kind == AccountKind.Payouts) { 
+        const hash = persistentHash<CurrencyEntry>(entry);
         entitlementsTrees.lookup(tournamentId).insertHash(disclose(hash));
         entitlementsCounts.lookup(tournamentId).increment(1);
       }
@@ -139,14 +140,13 @@ module Accounting<#MaxPlacements, #AccountTreeDepth> {
   }
 
   /**
-    * Record receipts for completed payouts, represented by a list of receipt hashes.
-    * Each hash represents a CurrencyEntry preimage for a receipt.
+    * Record receipts for completed payouts, represented by a list of currency entries.
     * Receipts can only be recorded after the payout plan is marked as ready.
     *
     * @param id - The unique identifier for the tournament.
-    * @param hashes - The list of hashes representing receipts to be added.
+    * @param entries - The list of entries representing receipts to be added.
     */
-  export circuit recordReceipts(id: Bytes<16>, hashes: Vector<8, Bytes<32>>): [] {
+  export circuit recordReceipts(id: Bytes<16>, entries: Vector<8, CurrencyEntry>): [] {
     const tournamentId = disclose(id);
     const state = states.lookup(tournamentId);
 
@@ -154,8 +154,10 @@ module Accounting<#MaxPlacements, #AccountTreeDepth> {
 
     useAuthority();
 
-    for (const hash of disclose(hashes)) {
-      if (hash != emptyHash()) {
+    for (const entry of entries) {
+      const kind = disclose(entry.kind);
+      if (kind == AccountKind.Receipt) {
+        const hash = persistentHash<CurrencyEntry>(entry);
         receiptsTrees.lookup(tournamentId).insertHash(disclose(hash));
         receiptsCounts.lookup(tournamentId).increment(1);
       }

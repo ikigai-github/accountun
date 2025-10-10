@@ -27,6 +27,7 @@ module Domain {
     * The kind of an entry leaf in the Merkle tree
     */
   export enum AccountKind {
+    Invalid, // Default so we can detect uninitialized entries
     Funding,
     Payouts,
     Receipt,
@@ -43,21 +44,13 @@ module Domain {
     amount: Uint<64>;
   }
   
-  // TODO: Add support for non-cash prizes (e.g. NFTs, physical items, etc)
-  // struct NonCashLeaf {
-  //   domain: Domain;
-  //   timestamp: Bytes<8>;
-  //   entityId: Bytes<32>;
-  //   assetId: Bytes<32>;
-  //   salt: Bytes<32>;
-  //   quantity: Uint<32>;
-  // }
-
-  export struct Hash256 {
-    value: Bytes<32>;
-  }
-
-  export struct Uuid {
-    value: Bytes<16>;
+  // TODO: Add support for non-currency (items) prizes (e.g. NFTs, physical items, etc)
+  struct ItemEntry {
+    kind: AccountKind;
+    timestamp: Bytes<8>;
+    entityId: Bytes<32>;
+    assetId: Bytes<32>;
+    salt: Bytes<32>;
+    quantity: Uint<32>;
   }
 }

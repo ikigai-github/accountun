@@ -1,21 +1,16 @@
 import { Command } from "commander";
-import { joinContract, registerTournament } from "@accountun/contract";
+import { completeTournament, joinContract } from "@accountun/contract";
 import { withClient } from "@accountun/contract/client";
 
-export function registerRegisterCommand(program: Command) {
+export function registerCompleteCommand(program: Command) {
   program
-    .command("register")
-    .description("Register a tournament with the accounting contract")
+    .command("complete")
+    .description("Complete a registered tournament")
     .requiredOption("--id <uuid>", "tournament id (UUID string")
-    .option(
-      "--cash <name>",
-      "cash currency code, crypto ticker symbol, or token name",
-      "usd",
-    )
     .option("--address <address>", "override the state stores contract address")
     .action(async (options: { id: string; cash: string; address?: string }) => {
       await withClient(async (client) => {
-        const { id, cash, address } = options;
+        const { id, address } = options;
 
         console.log(
           "ℹ Joining tournament contract for network:",
@@ -23,10 +18,10 @@ export function registerRegisterCommand(program: Command) {
         );
         const deployed = await joinContract(client, { address });
 
-        console.log("ℹ Registering tournament:", id, "with cash asset:", cash);
-        const tx = await registerTournament(deployed, id, cash);
+        console.log("ℹ Completing tournament:", id);
+        const tx = await completeTournament(deployed, id);
 
-        console.log("✅ Registered tournament:", id);
+        console.log("✅ Completed tournament:", id);
         console.log(" Tx Hash:", tx.public.txHash);
         console.log(" Tx Id: ", tx.public.txId);
       });

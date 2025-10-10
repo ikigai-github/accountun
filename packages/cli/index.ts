@@ -1,10 +1,14 @@
 #!/usr/bin/env bun
 import { Command, CommanderError } from "commander";
 import {
+  registerCancelCommand,
   registerDeployCommand,
+  registerFundCommand,
   registerRegisterCommand,
+  registerResultsCommand,
   registerWalletCommand,
 } from "./commands";
+import { registerPlanCommand } from "./commands/plan";
 
 const program = new Command()
   .name("accountun")
@@ -14,6 +18,10 @@ const program = new Command()
 registerDeployCommand(program);
 registerWalletCommand(program);
 registerRegisterCommand(program);
+registerFundCommand(program);
+registerCancelCommand(program);
+registerResultsCommand(program);
+registerPlanCommand(program);
 
 program.exitOverride();
 

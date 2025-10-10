@@ -14,23 +14,23 @@ import {
   getLedgerNetworkId,
   getZswapNetworkId,
 } from "@midnight-ntwrk/midnight-js-network-id";
-import {
-  PrivateStateKey,
-  type CircuitKeys,
-  type MidnightConfig,
-  type PrivateState,
-  type PrivateStateId,
-  type Providers,
-  type Wallet,
+import type {
+  CircuitKeys,
+  MidnightConfig,
+  PrivateState,
+  PrivateStateId,
+  Providers,
+  Wallet,
 } from "./types";
 import {
   type CoinInfo,
   Transaction,
   type TransactionId,
 } from "@midnight-ntwrk/ledger";
-import { getWalletState, getWalletStateUnsynced } from "./wallet";
+import { getWalletStateUnsynced } from "./wallet";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { PrivateStateKey } from "./constants";
 
 /**
  * Utility wrapper to create a wallet provider that wraps a started wallet instance

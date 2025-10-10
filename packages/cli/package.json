@@ -4,18 +4,21 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "cli": "bun ./index.ts",      
+    "cli": "bun ./index.ts",
     "dev": "bun --watch ./index.ts",
-    "help": "bun ./index.ts --help" 
+    "help": "bun ./index.ts --help"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@types/papaparse": "^5.3.16"
   },
   "peerDependencies": {
     "typescript": "^5"
   },
   "dependencies": {
     "@accountun/contract": "workspace:*",
-    "commander": "^14.0.0"
+
+    "commander": "^14.0.0",
+    "papaparse": "^5.5.3"
   }
 }
