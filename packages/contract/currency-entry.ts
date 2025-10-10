@@ -1,5 +1,5 @@
 import { numberToHex, bytes32FromHex, hexToBytes } from "@accountun/common";
-import type { AccountKind, CurrencyEntry, RawCurrencyEntry } from "./types";
+import type { AccountKindType, CurrencyEntry, RawCurrencyEntry } from "./types";
 
 /**
  * Convert a timestamp string to a byte array.
@@ -19,7 +19,7 @@ function timestampToBytes(timestamp: string): Uint8Array {
  * @returns The parsed currency entry.
  */
 export function parseCurrencyEntry(
-  kind: AccountKind,
+  kind: AccountKindType,
   entry: RawCurrencyEntry,
 ): CurrencyEntry {
   return {

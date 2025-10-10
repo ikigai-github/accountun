@@ -1,5 +1,5 @@
 import { blake2b32 } from "@accountun/common";
-import type { AssetKind } from "./types";
+import type { AssetKindType } from "./types";
 
 const encoder = new TextEncoder();
 
@@ -10,7 +10,10 @@ const encoder = new TextEncoder();
  * @param descriptor the descriptor of the asset (e.g. "USD", "Sword of Truth")
  * @returns The byte array representing the computed asset id (32 byte hash)
  */
-export function hashAssetId(kind: AssetKind, descriptor: string): Uint8Array {
+export function hashAssetId(
+  kind: AssetKindType,
+  descriptor: string,
+): Uint8Array {
   const canonical = descriptor
     .normalize()
     .trim()

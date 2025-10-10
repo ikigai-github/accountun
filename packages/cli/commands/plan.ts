@@ -1,8 +1,11 @@
 import { Command } from "commander";
-import { joinContract, planPayouts } from "@accountun/contract";
-import { withClient } from "@accountun/contract/client";
+import {
+  AccountKind,
+  joinContract,
+  planPayouts,
+  withClient,
+} from "@accountun/contract";
 import { readCurrencyEntries } from "../utilities/csv";
-import { AccountKind } from "@accountun/contract/constants";
 
 export function registerPlanCommand(program: Command) {
   program

@@ -1,6 +1,9 @@
 import { Command } from "commander";
-import { completeTournament, joinContract } from "@accountun/contract";
-import { withClient } from "@accountun/contract/client";
+import {
+  completeTournament,
+  joinContract,
+  withClient,
+} from "@accountun/contract";
 
 export function registerCompleteCommand(program: Command) {
   program

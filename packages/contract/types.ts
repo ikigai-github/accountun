@@ -111,12 +111,12 @@ export type MidnightClient = {
 /**
  * The kinds of accounts used in currency entries for funding, payouts, and receipts.
  */
-export type AccountKind = (typeof AccountKind)[keyof typeof AccountKind];
+export type AccountKindType = (typeof AccountKind)[keyof typeof AccountKind];
 
 /**
  * The kinds of assets that can be accounted for are cash or items.
  */
-export type AssetKind = (typeof AssetKind)[keyof typeof AssetKind];
+export type AssetKindType = (typeof AssetKind)[keyof typeof AssetKind];
 
 /**
  * A unparsed currency entry passed from the CLI or API.
@@ -133,7 +133,7 @@ export type RawCurrencyEntry = {
  * A currency entry used for funding, payouts, and receipts in the accounting contract.
  */
 export type CurrencyEntry = {
-  kind: AccountKind;
+  kind: AccountKindType;
   timestamp: Uint8Array; // Bytes<8>
   entityId: Uint8Array; // Bytes<32>
   salt: Uint8Array; // Bytes<32>

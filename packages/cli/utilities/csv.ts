@@ -5,7 +5,7 @@ import {
   readFile,
   uuidBytes,
 } from "@accountun/common";
-import type { AccountKind, CurrencyEntry } from "@accountun/contract";
+import type { AccountKindType, CurrencyEntry } from "@accountun/contract";
 import Papa from "papaparse";
 
 /**
@@ -73,7 +73,7 @@ export async function readPlayerIds(csvPath: string): Promise<Uint8Array[]> {
  */
 export async function readCurrencyEntries(
   csvPath: string,
-  kind: AccountKind,
+  kind: AccountKindType,
   timestampSeconds = Date.now() / 1000,
 ): Promise<CurrencyEntry[]> {
   const rows = await readCsv(csvPath);

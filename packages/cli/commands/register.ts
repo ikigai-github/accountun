@@ -1,6 +1,9 @@
 import { Command } from "commander";
-import { joinContract, registerTournament } from "@accountun/contract";
-import { withClient } from "@accountun/contract/client";
+import {
+  joinContract,
+  registerTournament,
+  withClient,
+} from "@accountun/contract";
 
 export function registerRegisterCommand(program: Command) {
   program

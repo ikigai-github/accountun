@@ -1,7 +1,5 @@
 import { Command } from "commander";
-
-import { withClient } from "@accountun/contract/client";
-import { joinContract, recordFunding } from "@accountun/contract";
+import { joinContract, recordFunding, withClient } from "@accountun/contract";
 
 export function registerFundCommand(program: Command) {
   program
