@@ -5,7 +5,7 @@
   "workspaces": [
     "packages/*"
   ],
-  "scripts": {    
+  "scripts": {
     "standalone": "docker compose stop && docker compose up -d",
     "testnet": "MIDNIGHT_NETWORK='testnet' docker compose up -d proof-server",
     "compile": "bun run --filter @accountun/contract --elide-lines=0 compile",

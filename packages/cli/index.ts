@@ -9,6 +9,8 @@ import {
   registerWalletCommand,
 } from "./commands";
 import { registerPlanCommand } from "./commands/plan";
+import { registerCompleteCommand } from "./commands/complete";
+import { registerReceiptsCommand } from "./commands/receipts";
 
 const program = new Command()
   .name("accountun")
@@ -22,22 +24,9 @@ registerFundCommand(program);
 registerCancelCommand(program);
 registerResultsCommand(program);
 registerPlanCommand(program);
+registerReceiptsCommand(program);
+registerCompleteCommand(program);
 
-program.exitOverride();
+program.helpCommand(true);
 
-try {
-  await program.parseAsync(process.argv);
-} catch (error: unknown) {
-  if (error instanceof Error) {
-    console.error(`✖ ${error.message}`);
-    if (error.stack) console.error("\n" + error.stack);
-
-    if (error instanceof CommanderError) {
-      process.exit(error.exitCode);
-    }
-  } else {
-    console.error(String(error));
-  }
-
-  process.exit(1);
-}
+await program.parseAsync(process.argv);

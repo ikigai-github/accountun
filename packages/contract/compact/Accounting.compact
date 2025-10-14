@@ -66,6 +66,14 @@ module Accounting<#MaxPlacements, #AccountTreeDepth> {
     
     states.insert(tournamentId, TournamentState.Registered);
     currencyAssetIds.insert(tournamentId, disclosedAssetId);
+
+    // Initialize empty Merkle trees and counts for the tournament
+    fundingTrees.insert(tournamentId, default<MerkleTree<AccountTreeDepth, CurrencyEntry>>);
+    fundingCounts.insert(tournamentId, default<Counter>);
+    entitlementsTrees.insert(tournamentId, default<MerkleTree<AccountTreeDepth, CurrencyEntry>>);
+    entitlementsCounts.insert(tournamentId, default<Counter>);
+    receiptsTrees.insert(tournamentId, default<MerkleTree<AccountTreeDepth, CurrencyEntry>>);
+    receiptsCounts.insert(tournamentId, default<Counter>);
   }
 
   /**
