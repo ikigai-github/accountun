@@ -7,5 +7,9 @@
   },
   "peerDependencies": {
     "typescript": "^5"
+  },
+  "dependencies": {
+    "@noble/hashes": "^2.0.1",
+    "uuid": "^13.0.0"
   }
 }

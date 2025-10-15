@@ -3,6 +3,9 @@
   "workspaces": {
     "": {
       "name": "accountun",
+      "dependencies": {
+        "accountun": ".",
+      },
     },
     "packages/api": {
       "name": "@accountun/api",
@@ -16,6 +19,7 @@
     "packages/cli": {
       "name": "@accountun/cli",
       "dependencies": {
+        "@accountun/common": "workspace:*",
         "@accountun/contract": "workspace:*",
         "commander": "^14.0.0",
         "papaparse": "^5.5.3",
@@ -30,6 +34,10 @@
     },
     "packages/common": {
       "name": "@accountun/common",
+      "dependencies": {
+        "@noble/hashes": "^2.0.1",
+        "uuid": "^13.0.0",
+      },
       "devDependencies": {
         "@types/bun": "latest",
       },
@@ -40,12 +48,14 @@
     "packages/contract": {
       "name": "@accountun/contract",
       "dependencies": {
+        "@accountun/common": "workspace:*",
         "@midnight-ntwrk/compact-runtime": "^0.9.0",
         "@midnight-ntwrk/ledger": "^4.0.0",
         "@midnight-ntwrk/midnight-js-contracts": "^2.0.2",
         "@midnight-ntwrk/midnight-js-http-client-proof-provider": "^2.0.2",
         "@midnight-ntwrk/midnight-js-indexer-public-data-provider": "^2.0.2",
         "@midnight-ntwrk/midnight-js-level-private-state-provider": "^2.0.2",
+        "@midnight-ntwrk/midnight-js-network-id": "2.0.2",
         "@midnight-ntwrk/midnight-js-node-zk-config-provider": "^2.0.2",
         "@midnight-ntwrk/midnight-js-types": "^2.0.2",
         "@midnight-ntwrk/wallet": "^5.0.0",
@@ -156,6 +166,8 @@
     "@wry/trie": ["@wry/trie@0.5.0", "", { "dependencies": { "tslib": "^2.3.0" } }, "sha512-FNoYzHawTMk/6KMQoEG5O4PuioX19UbwdQKF44yw0nLfOypfQdjtfZzo/UIJWAJ23sNIFbD1Ug9lbaDGMwbqQA=="],
 
     "abstract-level": ["abstract-level@2.0.2", "", { "dependencies": { "buffer": "^6.0.3", "is-buffer": "^2.0.5", "level-supports": "^6.0.0", "level-transcoder": "^1.0.1", "maybe-combine-errors": "^1.0.0", "module-error": "^1.0.1" } }, "sha512-pPJixmXk/kTKLB2sSue7o4Uj6TlLD2XfaP2gWZomHVCC6cuUGX/VslQqKG1yZHfXwBb/3lS6oSTMPGzh1P1iig=="],
+
+    "accountun": ["accountun@root:", {}],
 
     "base64-js": ["base64-js@1.5.1", "", {}, "sha512-AKpaYlHn8t4SVbOHCy+b5+KKgvR4vrsD8vbvrbiQJps7fKDTkjkDry6ji0rUJjC0kzbNePLwzxq8iypo41qeWA=="],
 

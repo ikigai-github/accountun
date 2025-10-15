@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@accountun/contract": "workspace:*",
+    "@accountun/common": "workspace:*",
     "commander": "^14.0.0",
     "papaparse": "^5.5.3"
   }

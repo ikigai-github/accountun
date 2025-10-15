@@ -9,7 +9,10 @@ import { indexerPublicDataProvider } from "@midnight-ntwrk/midnight-js-indexer-p
 import { levelPrivateStateProvider } from "@midnight-ntwrk/midnight-js-level-private-state-provider";
 import { httpClientProofProvider } from "@midnight-ntwrk/midnight-js-http-client-proof-provider";
 import { NodeZkConfigProvider } from "@midnight-ntwrk/midnight-js-node-zk-config-provider";
-import { Transaction as ZswapTransaction } from "@midnight-ntwrk/zswap";
+import {
+  NetworkId,
+  Transaction as ZswapTransaction,
+} from "@midnight-ntwrk/zswap";
 import {
   getLedgerNetworkId,
   getZswapNetworkId,
@@ -38,7 +41,7 @@ import { PrivateStateKey } from "./constants";
  * @returns a wallet provider that wraps the wallet and implements WalletProvider and MidnightProvider
  */
 async function createWalletProvider(
-  wallet: Wallet,
+  wallet: Wallet
 ): Promise<WalletProvider & MidnightProvider> {
   // Don't wait for wallet to be fully synced because we just need the keys and ability to submit transactions
   const state = await getWalletStateUnsynced(wallet);
@@ -47,22 +50,25 @@ async function createWalletProvider(
     encryptionPublicKey: state.encryptionPublicKey,
     balanceTx(
       tx: UnbalancedTransaction,
-      newCoins: CoinInfo[],
+      newCoins: CoinInfo[]
     ): Promise<BalancedTransaction> {
       return wallet
         .balanceTransaction(
           ZswapTransaction.deserialize(
             tx.serialize(getLedgerNetworkId()),
-            getZswapNetworkId(),
+            getZswapNetworkId()
           ),
-          newCoins,
+          newCoins
         )
-        .then((tx) => wallet.proveTransaction(tx))
-        .then((zswapTx) =>
-          Transaction.deserialize(
-            zswapTx.serialize(getZswapNetworkId()),
-            getLedgerNetworkId(),
-          ),
+        .then((tx: any) => wallet.proveTransaction(tx))
+        .then(
+          (zswapTx: {
+            serialize: (arg0: NetworkId) => Uint8Array<ArrayBufferLike>;
+          }) =>
+            Transaction.deserialize(
+              zswapTx.serialize(getZswapNetworkId()),
+              getLedgerNetworkId()
+            )
         )
         .then(createBalancedTx);
     },
@@ -80,7 +86,7 @@ async function createWalletProvider(
  */
 export async function createProviders(
   config: MidnightConfig,
-  wallet: Wallet,
+  wallet: Wallet
 ): Promise<Providers> {
   const privateStateProvider = levelPrivateStateProvider<
     PrivateStateId,
@@ -91,7 +97,7 @@ export async function createProviders(
 
   const publicDataProvider = indexerPublicDataProvider(
     config.indexerHttpUri,
-    config.indexerWsUri,
+    config.indexerWsUri
   );
 
   const moduleUrl = path.dirname(fileURLToPath(import.meta.url));

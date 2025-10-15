@@ -4,7 +4,7 @@ import {
   createProviders,
   withWallet,
   type MidnightClient,
-} from "@accountun/contract";
+} from "./index";
 
 import { getConfig } from "../cli/config";
 
@@ -40,7 +40,7 @@ export async function initializeClient(): Promise<MidnightClient> {
  * @returns the result of the function invocation
  */
 export async function withClient<T>(
-  fn: (client: MidnightClient) => Promise<T>,
+  fn: (client: MidnightClient) => Promise<T>
 ): Promise<T> {
   const config = getConfig();
   return withWallet(config, async (wallet) => {
