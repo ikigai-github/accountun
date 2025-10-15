@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
-import { Command, CommanderError } from "commander";
+
+import { Command } from "commander";
 import {
   registerCancelCommand,
   registerDeployCommand,

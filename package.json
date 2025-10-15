@@ -9,6 +9,6 @@
     "standalone": "docker compose stop && docker compose up -d",
     "testnet": "MIDNIGHT_NETWORK='testnet' docker compose up -d proof-server",
     "compile": "bun run --filter @accountun/contract --elide-lines=0 compile",
-    "cli": "bun run --filter @accountun/cli --elide-lines=0 cli"
+    "cli": "bun --filter @accountun/cli --elide-lines=0 cli"
   }
 }

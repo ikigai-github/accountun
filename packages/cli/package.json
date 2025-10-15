@@ -4,9 +4,7 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "cli": "bun ./index.ts",
-    "dev": "bun --watch ./index.ts",
-    "help": "bun ./index.ts --help"
+    "cli": "./index.ts"
   },
   "devDependencies": {
     "@types/bun": "latest",

@@ -2,6 +2,7 @@ import { Command } from "commander";
 import { joinContract, postResults } from "@accountun/contract";
 import { withClient } from "@accountun/contract/client";
 import { readPlayerIds } from "../utilities/csv";
+import path from "node:path";
 
 export function registerResultsCommand(program: Command) {
   program
@@ -19,7 +20,8 @@ export function registerResultsCommand(program: Command) {
       await withClient(async (client) => {
         const { id, csv, address } = options;
 
-        const playerIds = await readPlayerIds(csv);
+        const csvPath = path.resolve(csv);
+        const playerIds = await readPlayerIds(csvPath);
         console.log(
           "ℹ Joining tournament contract for network:",
           client.config.network,

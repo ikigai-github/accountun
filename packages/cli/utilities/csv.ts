@@ -25,7 +25,7 @@ type CsvRow = {
 async function readCsv(csvPath: string): Promise<CsvRow[]> {
   const csvContent = await readFile(csvPath);
   const parseConfig = {
-    header: false,
+    header: true,
     skipEmptyLines: true,
     transform: (value: string, column: string) => {
       switch (column) {
