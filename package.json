@@ -5,10 +5,13 @@
   "workspaces": [
     "packages/*"
   ],
+  "engines": {
+    "bun": "1.3.0"
+  },
   "scripts": {
     "standalone": "docker compose stop && docker compose up -d",
     "testnet": "MIDNIGHT_NETWORK='testnet' docker compose up -d proof-server",
-    "compile": "bun run --filter @accountun/contract --elide-lines=0 compile",
+    "compile": "bun --filter @accountun/contract --elide-lines=0 compile",
     "cli": "bun --filter @accountun/cli --elide-lines=0 cli"
   }
 }

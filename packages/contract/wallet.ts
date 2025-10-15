@@ -178,7 +178,7 @@ export async function getWalletState(
   const progressSub = src$
     .pipe(
       throttleTime(throttleMs, undefined, { leading: true, trailing: true }),
-      tap((s) => {
+      tap((s: WalletState) => {
         if (!options?.onProgress) return;
         const scanned =
           typeof s.syncProgress?.synced === "bigint"
@@ -200,10 +200,10 @@ export async function getWalletState(
       })),
       bufferCount(minConsecutive, 1),
       filter(
-        (buffer) =>
+        (buffer: Gate[]) =>
           buffer.length === minConsecutive && buffer.every((g) => g.ok),
       ),
-      map((buffer) => buffer[buffer.length - 1]!.state),
+      map((buffer: Gate[]) => buffer[buffer.length - 1]!.state),
       take(1),
     );
 
