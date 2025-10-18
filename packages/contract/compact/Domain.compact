@@ -39,8 +39,7 @@ module Domain {
   export struct CurrencyEntry {
     kind: AccountKind;
     timestamp: Bytes<8>;
-    entityId: Bytes<32>;
-    salt: Bytes<32>;
+    entityId: Bytes<16>;
     amount: Uint<64>;
   }
   
@@ -48,9 +47,8 @@ module Domain {
   struct ItemEntry {
     kind: AccountKind;
     timestamp: Bytes<8>;
-    entityId: Bytes<32>;
-    assetId: Bytes<32>;
-    salt: Bytes<32>;
+    entityId: Bytes<16>;
+    assetId: Bytes<16>;
     quantity: Uint<32>;
   }
 }

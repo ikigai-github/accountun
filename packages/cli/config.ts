@@ -1,4 +1,4 @@
-import { bytes32FromHex, isHex32 } from "@accountun/common";
+import { bytes16FromHex, isHex32 } from "@accountun/common";
 import { type MidnightConfig, type NetworkName } from "@accountun/contract";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -58,7 +58,7 @@ function getAuthSecret(): Uint8Array {
     throw new Error("AUTH_SECRET_HEX is not set");
   }
 
-  return bytes32FromHex(process.env.AUTH_SECRET_HEX);
+  return bytes16FromHex(process.env.AUTH_SECRET_HEX);
 }
 
 /**
@@ -67,7 +67,7 @@ function getAuthSecret(): Uint8Array {
  */
 function getAuthReplacementKey(): Uint8Array | undefined {
   return process.env.AUTH_REPLACEMENT_KEY_HEX
-    ? bytes32FromHex(process.env.AUTH_REPLACEMENT_KEY_HEX)
+    ? bytes16FromHex(process.env.AUTH_REPLACEMENT_KEY_HEX)
     : undefined;
 }
 

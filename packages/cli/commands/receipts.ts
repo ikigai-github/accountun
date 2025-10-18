@@ -2,7 +2,7 @@ import { Command } from "commander";
 import {
   AccountKind,
   joinContract,
-  recordReceipts,
+  recordReceipt,
   withClient,
 } from "@accountun/contract";
 import { readCurrencyEntries } from "../utilities/csv";
@@ -10,9 +10,7 @@ import { readCurrencyEntries } from "../utilities/csv";
 export function registerReceiptsCommand(program: Command) {
   program
     .command("receipts")
-    .description(
-      "Record the receipts for a tournament with the accounting contract",
-    )
+    .description("Record the receipts for a tournament")
     .requiredOption("--id <uuid>", "tournament id (UUID string")
     .requiredOption(
       "--csv <players>",
@@ -40,14 +38,14 @@ export function registerReceiptsCommand(program: Command) {
           const deployed = await joinContract(client, { address });
 
           console.log("ℹ Recording receipts for tournament:", id);
-          const txs = await recordReceipts(deployed, id, receipts);
-
-          console.log("✅ Posted receipts for tournament:", id);
-          txs.forEach((tx, index) => {
-            console.log(` Receipt Tx ${index + 1}:`);
+          for (const entry of receipts) {
+            const tx = await recordReceipt(deployed, id, entry);
+            console.log(" Recorded receipt:");
             console.log("  Tx Hash:", tx.public.txHash);
             console.log("  Tx Id: ", tx.public.txId);
-          });
+          }
+
+          console.log("✅ Finished posting receipts for tournament:", id);
         });
       },
     );

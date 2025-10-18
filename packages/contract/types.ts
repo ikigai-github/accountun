@@ -124,8 +124,7 @@ export type AssetKindType = (typeof AssetKind)[keyof typeof AssetKind];
  */
 export type RawCurrencyEntry = {
   timestamp: string; // stringified u64
-  entityId: string; // hex string of Bytes<32>
-  salt: string; // hex string of Bytes<32>
+  entityId: string; // hex string of Bytes<16>
   amount: string; // stringified u64
 };
 
@@ -135,7 +134,6 @@ export type RawCurrencyEntry = {
 export type CurrencyEntry = {
   kind: AccountKindType;
   timestamp: Uint8Array; // Bytes<8>
-  entityId: Uint8Array; // Bytes<32>
-  salt: Uint8Array; // Bytes<32>
+  entityId: Uint8Array; // Bytes<16>
   amount: bigint; // u64
 };

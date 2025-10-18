@@ -9,7 +9,7 @@ import Auth;
 /**
   * Main entry point for the tournament contract
   */
-constructor(secret: Bytes<32>) {
+constructor(secret: Bytes<16>) {
   initializeAccounting(secret);
 }
 
@@ -17,8 +17,9 @@ export {
   registerTournament,
   recordFunding,
   postResults,
-  planPayouts,
-  recordReceipts,
+  planPayout,
+  payoutReady,
+  recordReceipt,
   payoutComplete,
   cancelTournament,
   rotateAuthority

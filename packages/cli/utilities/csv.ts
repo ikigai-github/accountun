@@ -1,9 +1,10 @@
 import {
-  numberToHex,
   bytes32FromHex,
   hexToBytes,
   readFile,
   uuidBytes,
+  intToHex,
+  blake2b32,
 } from "@accountun/common";
 import type { AccountKindType, CurrencyEntry } from "@accountun/contract";
 import Papa from "papaparse";
@@ -14,7 +15,6 @@ import Papa from "papaparse";
 type CsvRow = {
   id: Uint8Array;
   amount?: bigint;
-  salt?: Uint8Array;
 };
 
 /**
@@ -33,8 +33,6 @@ async function readCsv(csvPath: string): Promise<CsvRow[]> {
           return uuidBytes(value);
         case "amount":
           return BigInt(value);
-        case "salt":
-          return bytes32FromHex(value);
         default:
           return value;
       }
@@ -74,10 +72,10 @@ export async function readPlayerIds(csvPath: string): Promise<Uint8Array[]> {
 export async function readCurrencyEntries(
   csvPath: string,
   kind: AccountKindType,
-  timestampSeconds = Date.now() / 1000,
+  timestampSeconds = Math.floor(Date.now() / 1000),
 ): Promise<CurrencyEntry[]> {
   const rows = await readCsv(csvPath);
-  const timestampBytes = hexToBytes(numberToHex(timestampSeconds, 8));
+  const timestampBytes = hexToBytes(intToHex(timestampSeconds, 8));
 
   const entries: CurrencyEntry[] = [];
   for (const row of rows) {
@@ -87,17 +85,10 @@ export async function readCurrencyEntries(
       );
     }
 
-    if (row.salt === undefined) {
-      throw new Error(
-        `Missing salt for player ${Buffer.from(row.id).toString("hex")}`,
-      );
-    }
-
     entries.push({
       entityId: row.id,
       timestamp: timestampBytes,
       amount: row.amount,
-      salt: row.salt,
       kind,
     });
   }

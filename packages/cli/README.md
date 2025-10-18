@@ -17,7 +17,7 @@ bun cli -h
 │                       contract address
 │   wallet              Construct the wallet from seed hex and print its address
 │                       and balance
-│   register [options]  Register a tournament with the accounting contract
+│   register [options]  Register a tournament
 │   fund [options]      Record funding for a tournament
 │   cancel [options]    Cancel a registered tournament
 │   results [options]   Post the results of a tournament
@@ -94,7 +94,7 @@ $ MIDNIGHT_NETWORK='testnet' docker compose up -d proof-server
 └─ Done in xx.xx s
 ```
 
-If your wallet doesn't yet have dust you can request funds from the [Testnet Faucet|https://midnight.network/test-faucet] with the wllet address printed above.
+If your wallet doesn't yet have dust you can request funds from the [Testnet Faucet|https://midnight.network/test-faucet] with the wallet address printed above.
 
 4. Deploy the contract
 

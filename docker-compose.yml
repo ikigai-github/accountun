@@ -1,11 +1,17 @@
 services:
   proof-server:
     image: "midnightnetwork/proof-server:4.0.0"
-    command: ["midnight-proof-server --network ${MIDNIGHT_NETWORK:-undeployed}"]
+    command:
+      [
+        "midnight-proof-server --network ${MIDNIGHT_NETWORK:-undeployed} --verbose",
+      ]
     ports:
       - "6300:6300"
     environment:
+      RUST_LOG: "trace,actix_web::middleware::logger=trace,actix_web=trace"
       RUST_BACKTRACE: "full"
+    volumes:
+      - ./.cache/midnight/zk-params:/.cache/midnight/zk-params
   indexer:
     image: "midnightntwrk/indexer-standalone:2.1.4"
     ports:

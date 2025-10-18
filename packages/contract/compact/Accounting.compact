@@ -10,12 +10,11 @@ module Accounting<#MaxPlacements, #AccountTreeDepth> {
 
   import "Auth";
   import "Domain";
-  import "Utils";
 
   /**
     * Map of the asset ID representing the currency used for all cash prizes and funding in keyed tournament
     */
-  export ledger currencyAssetIds: Map<Bytes<16>, Bytes<32>>;
+  export ledger currencyAssetIds: Map<Bytes<16>, Bytes<16>>;
 
   /**
     * Map of the current state of the tournament, governing what operations are allowed in keyed tournament
@@ -44,7 +43,7 @@ module Accounting<#MaxPlacements, #AccountTreeDepth> {
     *
     * @param secret - The secret key used to derive the initial authority public key.
     */
-  export circuit initializeAccounting(secret: Bytes<32>): [] {
+  export circuit initializeAccounting(secret: Bytes<16>): [] {
     initializeAuthority(secret);
   }
 
@@ -56,13 +55,13 @@ module Accounting<#MaxPlacements, #AccountTreeDepth> {
     * @param id - The unique identifier for the tournament.
     * @param assetId - The asset ID representing the currency used for cash prizes and funding.
     */
-  export circuit registerTournament(id: Bytes<16>, assetId: Bytes<32>): [] {
+  export circuit registerTournament(id: Bytes<16>, assetId: Bytes<16>): [] {
     const tournamentId = disclose(id);
     const disclosedAssetId = disclose(assetId);
 
     assert(!states.member(tournamentId), "Tournament with this ID already registered");
 
-    useAuthority();
+    checkAuthority();
     
     states.insert(tournamentId, TournamentState.Registered);
     currencyAssetIds.insert(tournamentId, disclosedAssetId);
@@ -91,7 +90,7 @@ module Accounting<#MaxPlacements, #AccountTreeDepth> {
 
     assert(state == TournamentState.Registered, "Funding can only be recorded while tournament is still in newly registered state");
 
-    useAuthority();
+    checkAuthority();
 
     fundingTrees.lookup(tournamentId).insertHash(disclose(hash));
     fundingCounts.lookup(tournamentId).increment(1);
@@ -111,7 +110,7 @@ module Accounting<#MaxPlacements, #AccountTreeDepth> {
 
     assert(state == TournamentState.Registered, "Results must be posted while tournament is in the registered state");
 
-    useAuthority();
+    checkAuthority();
 
     placements.insert(tournamentId, disclosedResults);
     states.insert(tournamentId, TournamentState.ResultPosted);
@@ -125,26 +124,38 @@ module Accounting<#MaxPlacements, #AccountTreeDepth> {
     * @param entries - The list of currency entries representing payouts to be added to the plan.
     * @param ready - A boolean indicating if the payout plan is complete and ready for execution.
     */
-  export circuit planPayouts(id: Bytes<16>, entries: Vector<8, CurrencyEntry>, ready: Boolean): [] {
+  export circuit planPayout(id: Bytes<16>, entry: CurrencyEntry): [] {
     const tournamentId = disclose(id);
     const state = states.lookup(tournamentId);
+    const kind = disclose(entry.kind);
 
     assert(state == TournamentState.ResultPosted || state == TournamentState.NoResults, "Payouts require results to be posted");
+    assert(kind == AccountKind.Payouts, "Only payout entries can be added to the payout plan");
 
-    useAuthority();
+    checkAuthority();
 
-    for (const entry of entries) {
-      const kind = disclose(entry.kind);
-      if(kind == AccountKind.Payouts) { 
-        const hash = persistentHash<CurrencyEntry>(entry);
-        entitlementsTrees.lookup(tournamentId).insertHash(disclose(hash));
-        entitlementsCounts.lookup(tournamentId).increment(1);
-      }
-    }
+    const hash = persistentHash<CurrencyEntry>(entry);
+    entitlementsTrees.lookup(tournamentId).insertHash(disclose(hash));
+    entitlementsCounts.lookup(tournamentId).increment(1);
+  }
 
-    if (disclose(ready)) {
-      states.insert(tournamentId, TournamentState.PayoutReady);
-    }
+  /**
+    * Mark the payout plan as ready for execution.
+    * This transitions the tournament state to PayoutReady.
+    * Payout can only be marked ready from the ResultPosted or NoResults states.
+    *
+    * @param id - The unique identifier for the tournament.
+    */
+  export circuit payoutReady(id: Bytes<16>): [] {
+    const tournamentId = disclose(id);
+    const state = states.lookup(tournamentId);
+    assert(state == TournamentState.ResultPosted || state == TournamentState.NoResults, "Payout can only be marked ready from results posted or no results states");
+
+    // TODO: Could check the payout plan covers the funding 
+
+    checkAuthority();
+
+    states.insert(tournamentId, TournamentState.PayoutReady);
   }
 
   /**
@@ -154,30 +165,25 @@ module Accounting<#MaxPlacements, #AccountTreeDepth> {
     * @param id - The unique identifier for the tournament.
     * @param entries - The list of entries representing receipts to be added.
     */
-  export circuit recordReceipts(id: Bytes<16>, entries: Vector<8, CurrencyEntry>): [] {
+  export circuit recordReceipt(id: Bytes<16>, entry: CurrencyEntry): [] {
     const tournamentId = disclose(id);
     const state = states.lookup(tournamentId);
+    const kind = disclose(entry.kind);
 
     assert(state == TournamentState.PayoutReady, "Receipts only allowed after payout ready");
+    assert(kind == AccountKind.Receipt, "Only receipt entries can be recorded");
 
-    useAuthority();
+    checkAuthority();
 
-    for (const entry of entries) {
-      const kind = disclose(entry.kind);
-      if (kind == AccountKind.Receipt) {
-        const hash = persistentHash<CurrencyEntry>(entry);
-        receiptsTrees.lookup(tournamentId).insertHash(disclose(hash));
-        receiptsCounts.lookup(tournamentId).increment(1);
-      }
-    }
+    const hash = persistentHash<CurrencyEntry>(entry);
+    receiptsTrees.lookup(tournamentId).insertHash(disclose(hash));
+    receiptsCounts.lookup(tournamentId).increment(1);
   }
 
   /**
     * Mark the payout process as complete, indicating all entitlements have been paid out.
     * This transitions the tournament state to PayoutComplete.
     * Payout can only be marked complete from the PayoutReady state.
-    *
-
     * 
     * @param id - The unique identifier for the tournament.
     */
@@ -188,7 +194,7 @@ module Accounting<#MaxPlacements, #AccountTreeDepth> {
     
     // TODO: Want to prove the sum of receipts matches the sum of payout plan and sum of funding.
 
-    useAuthority();
+    checkAuthority();
 
     states.insert(tournamentId, TournamentState.PayoutComplete);
   }
@@ -209,7 +215,7 @@ module Accounting<#MaxPlacements, #AccountTreeDepth> {
 
     assert(state == TournamentState.Registered, "Only tournaments without results can be cancelled");
 
-    useAuthority();
+    checkAuthority();
 
     if(fundingCount > 0) {
       states.insert(tournamentId, TournamentState.NoResults);

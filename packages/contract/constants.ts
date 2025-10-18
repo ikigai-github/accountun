@@ -23,3 +23,14 @@ export const AccountKind = {
   PAYOUTS: 2,
   RECEIPTS: 3,
 } as const;
+
+/**
+ * The maximum number of placements supported in the compiled tournament contract
+ * TODO: Tie this more directly to the contract.
+ */
+export const MAX_PLACEMENTS = 16;
+
+/**
+ * The maximum number of currency entries that can be processed in a single transaction.
+ */
+export const MAX_CURRENCY_ENTRIES = 8;

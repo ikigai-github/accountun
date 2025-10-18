@@ -5,17 +5,16 @@ import type {
   DeployedContract,
   RawCurrencyEntry,
 } from "./types";
-import { AccountKind, AssetKind } from "./constants";
-import { parseCurrencyEntry } from "./currency-entry";
-import type { FinalizedCallTxData } from "@midnight-ntwrk/midnight-js-contracts";
-import type { Contract } from "@midnight-ntwrk/midnight-js-types";
+import { AccountKind, AssetKind, MAX_PLACEMENTS } from "./constants";
+import { parseCurrencyEntry } from "./conversion";
 
 /**
  * Registers a tournament with the given contract instance
+ *
  * @param contract The deployed contract instance
  * @param tournamentId The UUID string representing the tournament ID
  * @param cashAssetName The name of the cash asset to use (default: "usd")
- * @returns The transaction data for registering the tournament
+ * @returns The transaction result from registering the tournament
  */
 export async function registerTournament(
   contract: DeployedContract,
@@ -25,44 +24,48 @@ export async function registerTournament(
   const tournamentIdBytes = uuidBytes(tournamentId);
   const assetIdBytes = hashAssetId(AssetKind.CASH, cashAssetName);
 
-  const txData = await contract.callTx.registerTournament(
+  const txResult = await contract.callTx.registerTournament(
     tournamentIdBytes,
     assetIdBytes,
   );
 
-  return txData;
+  return txResult;
 }
 
 /**
  * Record funding for a tournament
+ *
  * @param contract The deployed contract instance
  * @param tournamentId The UUID string representing the tournament ID
  * @param rawEntry The raw currency entry data
- * @returns The transaction data for recording the funding
+ * @returns The transaction result from recording the funding
  */
 export async function recordFunding(
   contract: DeployedContract,
   tournamentId: string,
-  entry: RawCurrencyEntry | CurrencyEntry,
+  rawEntry: RawCurrencyEntry | CurrencyEntry,
 ) {
   const tournamentIdBytes = uuidBytes(tournamentId);
 
-  if (isRawCurrencyEntry(entry)) {
-    // If the entry is a raw currency entry, we need to parse it
-    entry = parseCurrencyEntry(AccountKind.FUNDING, entry);
-  }
+  const entry = isRawCurrencyEntry(rawEntry)
+    ? parseCurrencyEntry(AccountKind.FUNDING, rawEntry)
+    : rawEntry;
 
-  const txData = await contract.callTx.recordFunding(tournamentIdBytes, entry);
+  const txResult = await contract.callTx.recordFunding(
+    tournamentIdBytes,
+    entry,
+  );
 
-  return txData;
+  return txResult;
 }
 
 /**
  * Post the results of a tournament
+ *
  * @param contract The deployed contract instance
  * @param tournamentId The UUID string representing the tournament ID
  * @param playerIds An array of player UUID strings in order of placement
- * @returns The transaction data for posting the results
+ * @returns The transaction result for posting the tournament results
  */
 export async function postResults(
   contract: DeployedContract,
@@ -70,110 +73,95 @@ export async function postResults(
   playerIds: string[] | Uint8Array[],
 ) {
   const tournamentIdBytes = uuidBytes(tournamentId);
+  const array: Uint8Array[] =
+    typeof playerIds[0] === "string"
+      ? (playerIds as string[]).map(uuidBytes)
+      : (playerIds as Uint8Array[]);
 
-  let playerIdBytes: Uint8Array[];
-  if (playerIds.length > 0 && typeof playerIds[0] === "string") {
-    playerIdBytes = (playerIds as string[]).map(uuidBytes);
-  } else {
-    playerIdBytes = playerIds as Uint8Array[];
-  }
+  const ids = toFixedVectorArray(array, 16, MAX_PLACEMENTS);
+  const txResult = await contract.callTx.postResults(tournamentIdBytes, ids);
 
-  const txData = await contract.callTx.postResults(
-    tournamentIdBytes,
-    playerIdBytes,
-  );
-
-  return txData;
+  return txResult;
 }
 
 /**
- * Plan the payouts for a tournament
+ * Plan a payout for a tournament
+ *
  * @param contract The deployed contract instance
  * @param tournamentId The UUID string representing the tournament ID
- * @param payoutPlan An array of currency entries representing the payout plan in order of placement
- * @param complete whether payout plan will be complete after this call
- * @returns The transaction data for planning the payouts
+ * @param rawEntry The raw currency entry data
+ * @returns The transaction result for planning the payouts
  */
-export async function planPayouts(
+export async function planPayout(
   contract: DeployedContract,
   tournamentId: string,
-  payoutPlan: CurrencyEntry[] | RawCurrencyEntry[],
-  complete = true,
+  rawEntry: CurrencyEntry | RawCurrencyEntry,
 ) {
   const tournamentIdBytes = uuidBytes(tournamentId);
 
-  const entries: CurrencyEntry[] = isRawCurrencyEntry(payoutPlan[0])
-    ? (payoutPlan as RawCurrencyEntry[]).map((e) =>
-        parseCurrencyEntry(AccountKind.PAYOUTS, e),
-      )
-    : (payoutPlan as CurrencyEntry[]);
+  const entry: CurrencyEntry = isRawCurrencyEntry(rawEntry)
+    ? parseCurrencyEntry(AccountKind.PAYOUTS, rawEntry)
+    : rawEntry;
 
-  if (entries.length === 0) return [];
+  const txResult = await contract.callTx.planPayout(tournamentIdBytes, entry);
+  return txResult;
+}
 
-  const txs: FinalizedCallTxData<Contract, "planPayouts">[] = [];
+/**
+ * Mark a tournament as payout ready
+ * @param contract The deployed contract instance
+ * @param tournamentId The UUID string representing the tournament ID
+ * @returns The transaction result from marking the tournament as payout ready
+ */
+export async function payoutReady(
+  contract: DeployedContract,
+  tournamentId: string,
+) {
+  const tournamentIdBytes = uuidBytes(tournamentId);
+  const txResult = await contract.callTx.payoutReady(tournamentIdBytes);
 
-  for (let offset = 0; offset < entries.length; offset += 8) {
-    const chunk = entries.slice(offset, offset + 8);
-    const isLastChunk = offset + 8 >= entries.length;
-    const res = await contract.callTx.planPayouts(
-      tournamentIdBytes,
-      chunk,
-      isLastChunk ? complete : false,
-    );
-    txs.push(res);
-  }
-
-  return txs;
+  return txResult;
 }
 
 /**
  * Record the receipts for a tournament
  * @param contract The deployed contract instance
  * @param tournamentId The UUID string representing the tournament ID
- * @param receipts An array of currency entries representing the receipts in order of placement
- * @returns The transaction data for recording the receipts
+ * @param receipt The currency entry representing a payout receipt
+ * @returns The transaction result frin recording the receipts
  */
-export async function recordReceipts(
+export async function recordReceipt(
   contract: DeployedContract,
   tournamentId: string,
-  receipts: CurrencyEntry[] | RawCurrencyEntry[],
+  rawEntry: CurrencyEntry | RawCurrencyEntry,
 ) {
   const tournamentIdBytes = uuidBytes(tournamentId);
 
-  const entries: CurrencyEntry[] = isRawCurrencyEntry(receipts[0])
-    ? (receipts as RawCurrencyEntry[]).map((e) =>
-        parseCurrencyEntry(AccountKind.RECEIPTS, e),
-      )
-    : (receipts as CurrencyEntry[]);
+  const entry: CurrencyEntry = isRawCurrencyEntry(rawEntry)
+    ? parseCurrencyEntry(AccountKind.RECEIPTS, rawEntry)
+    : rawEntry;
 
-  if (entries.length === 0) return [];
-
-  const txs: FinalizedCallTxData<Contract, "recordReceipts">[] = [];
-
-  for (let offset = 0; offset < entries.length; offset += 8) {
-    const chunk = entries.slice(offset, offset + 8);
-    const res = await contract.callTx.recordReceipts(tournamentIdBytes, chunk);
-    txs.push(res);
-  }
-
-  return txs;
+  const txResult = await contract.callTx.recordReceipt(
+    tournamentIdBytes,
+    entry,
+  );
+  return txResult;
 }
 
 /**
  * Complete a tournament
  * @param contract The deployed contract instance
  * @param tournamentId The UUID string representing the tournament ID
- * @returns The transaction data for completing the tournament
+ * @returns The transaction result from completing the tournament
  */
 export async function completeTournament(
   contract: DeployedContract,
   tournamentId: string,
 ) {
   const tournamentIdBytes = uuidBytes(tournamentId);
+  const txResult = await contract.callTx.payoutComplete(tournamentIdBytes);
 
-  const txData = await contract.callTx.payoutComplete(tournamentIdBytes);
-
-  return txData;
+  return txResult;
 }
 
 /**
@@ -202,4 +190,32 @@ function isRawCurrencyEntry(
   entry: RawCurrencyEntry | CurrencyEntry | undefined,
 ): entry is RawCurrencyEntry {
   return entry !== undefined && typeof entry.amount === "string";
+}
+
+/**
+ * Pads a dynamic sized array to a fixed size by appending empty (zero) elements as needed.
+ *
+ * @param values The dynamic sized array that needs to be set to a fixed size
+ * @param bytes The number of bytes in the empty elements in the array
+ * @param length The fixed vector length
+ * @returns A Uint8Array[] of the fixed length with empty elements padded as needed
+ * @throws Error if the input array has more elements than the fixed length
+ */
+function toFixedVectorArray(
+  values: Uint8Array[],
+  bytes: number,
+  length: number,
+) {
+  if (values.length > length)
+    throw new Error(`Too many elements, max is ${length}`);
+
+  if (values.length < length) {
+    const pads = Array.from(
+      { length: length - values.length },
+      () => new Uint8Array(bytes),
+    );
+    values = values.concat(pads);
+  }
+
+  return values;
 }

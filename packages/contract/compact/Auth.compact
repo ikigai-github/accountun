@@ -4,10 +4,6 @@
 module Auth {
   import CompactStandardLibrary;
 
-  /**
-    * Monotonically increasing number to ensure single use of public keys
-    */
-  export ledger round: Counter;
 
   /**
     * Public key constructed from current round and secret representing the current authority
@@ -22,20 +18,10 @@ module Auth {
     *
     * @param secret - The secret key used to derive the initial authority public key.
     */
-  export circuit initializeAuthority(secret: Bytes<32>): [] {
-    authority = disclose(publicKey(round, secret));
+  export circuit initializeAuthority(secret: Bytes<16>): [] {
+    authority = disclose(publicKey(secret));
   }
 
-  /**
-    * @circuit useAuthority
-    * @description Verify the provided secret key matches the current authority and
-    * increment the round to change the public key for future operations.
-    */
-  export circuit useAuthority(): [] {
-    checkAuthority();
-    round.increment(1);
-    authority = disclose(publicKey(round, privateKey()));
-  }
 
   /**
     * @circuit rotateAuthority
@@ -45,8 +31,7 @@ module Auth {
     */
   export circuit rotateAuthority(): [] {
     checkAuthority();
-    round.increment(1);
-    authority = disclose(publicKey(round, replacementKey()));
+    authority = disclose(publicKey(replacementKey()));
   }
 
   /**
@@ -59,10 +44,9 @@ module Auth {
     * @param secretKey - The secret key used to derive the public key.
     * @returns The derived public key as a Bytes<32>.
     */
-  pure circuit publicKey(round: Field, secretKey: Bytes<32>): Bytes<32> {
-    return persistentHash<Vector<3, Bytes<32>>>([ 
-      pad(32, "ascent:tournament"), 
-      round as Bytes<32>, 
+  pure circuit publicKey(secretKey: Bytes<16>): Bytes<32> {
+    return persistentHash<[Bytes<16>, Bytes<16>]>([ 
+      pad(16, "ascent:auth:v1"), 
       secretKey
     ]);
   }
@@ -73,15 +57,15 @@ module Auth {
     * This is done by deriving the public key from the current round and the provided secret key,
     * and asserting it matches the stored authority.
     */
-  circuit checkAuthority(): [] {
+  export circuit checkAuthority(): [] {
     const secretKey = privateKey();
-    const currentAuthority = publicKey(round, secretKey);
+    const currentAuthority = publicKey(secretKey);
     assert(authority == currentAuthority, "Invalid private key for current round");
   }
 
   /** Witnesses for providing private keys used in authority operations */
-  witness privateKey(): Bytes<32>;
-  witness replacementKey(): Bytes<32>;
+  witness privateKey(): Bytes<16>;
+  witness replacementKey(): Bytes<16>;
 }
 
 

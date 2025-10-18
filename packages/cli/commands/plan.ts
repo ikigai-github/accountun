@@ -2,7 +2,7 @@ import { Command } from "commander";
 import {
   AccountKind,
   joinContract,
-  planPayouts,
+  planPayout,
   withClient,
 } from "@accountun/contract";
 import { readCurrencyEntries } from "../utilities/csv";
@@ -10,9 +10,7 @@ import { readCurrencyEntries } from "../utilities/csv";
 export function registerPlanCommand(program: Command) {
   program
     .command("plan")
-    .description(
-      "Plan the payouts for a tournament with the accounting contract",
-    )
+    .description("Plan the payouts for a tournament")
     .requiredOption("--id <uuid>", "tournament id (UUID string")
     .requiredOption(
       "--csv <players>",
@@ -36,8 +34,6 @@ export function registerPlanCommand(program: Command) {
 
           const plan = await readCurrencyEntries(csv, AccountKind.PAYOUTS);
 
-          console.log("ℹ Read", plan.length, "currency entries from", csv);
-
           console.log(
             "ℹ Joining tournament contract for network:",
             client.config.network,
@@ -45,14 +41,12 @@ export function registerPlanCommand(program: Command) {
           const deployed = await joinContract(client, { address });
 
           console.log("ℹ Planning payout for tournament:", id);
-          const txs = await planPayouts(deployed, id, plan, complete);
-
-          console.log("✅ Posted results for tournament:", id);
-          txs.forEach((tx, index) => {
-            console.log(` Plan Tx ${index + 1}:`);
+          for (const entry of plan) {
+            const tx = await planPayout(deployed, id, entry);
+            console.log(" Planned payout:");
             console.log("  Tx Hash:", tx.public.txHash);
             console.log("  Tx Id: ", tx.public.txId);
-          });
+          }
         });
       },
     );

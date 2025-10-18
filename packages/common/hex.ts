@@ -73,21 +73,61 @@ export function bytesToHex(value: Uint8Array): string {
 }
 
 /**
+ * Converts an integer value to a bigint
+ * @param value the value to convert
+ * @returns the converted bigint
+ */
+export function intToBigint(value: bigint | number | string) {
+  let converted: bigint;
+  if (typeof value === "bigint") {
+    converted = value;
+  } else if (typeof value === "number") {
+    if (!Number.isFinite(value) || !Number.isInteger(value)) {
+      throw new RangeError("number must be a finite integer");
+    }
+    if (!Number.isSafeInteger(value)) {
+      throw new RangeError(
+        "number exceeds MAX_SAFE_INTEGER; use bigint or string",
+      );
+    }
+    converted = BigInt(value);
+  } else {
+    if (!/^\d+$/.test(value)) {
+      throw new RangeError("string must be a decimal unsigned integer");
+    }
+    converted = BigInt(value);
+  }
+
+  return converted;
+}
+
+/**
  * Converts a bigint to a hex string
  * @param a the bigint to convert
  * @param byteLength the desired byte length of the output hex string
  * @returns The hex string representation of the bigint
  */
-export function numberToHex(a: bigint | number, byteLength?: number): string {
-  if (a < 0)
-    throw RangeError(
-      "a should be a non-negative integer. Negative values are not supported",
-    );
-  let hex = a.toString(16);
-  if (byteLength) {
-    const padding = byteLength * 2 - hex.length;
-    if (padding > 0) hex = "0".repeat(padding) + hex;
+export function intToHex(
+  value: bigint | number | string,
+  byteLength?: number,
+): string {
+  const int = intToBigint(value);
+
+  if (int < 0n) throw new RangeError("value must be non-negative");
+
+  let hex = int.toString(16);
+
+  if (hex.length % 2) hex = "0" + hex;
+
+  if (byteLength !== undefined) {
+    const target = byteLength * 2; // hex chars
+    if (hex.length > target) {
+      throw new RangeError(`value does not fit in ${byteLength} bytes`);
+    } else if (hex.length < target) {
+      hex = hex.padStart(target, "0");
+    }
   }
+
   return hex;
 }
 

@@ -19,9 +19,14 @@ import { readFile, rotateWriteFile } from "@accountun/common";
 import path from "node:path";
 import { PrivateStateKey } from "./constants";
 
+/**
+ * Creates a new contract instance.
+ * @returns The newly created contract instance.
+ */
 export function createContract(): Contract {
   return new ManagedContract<PrivateState>(witnesses);
 }
+
 /**
  * Utility wrapper to deploy the tournament accounting contract
  * @param secretKey the secret key to use when initializing the contract

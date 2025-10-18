@@ -12,6 +12,7 @@
     "standalone": "docker compose stop && docker compose up -d",
     "testnet": "MIDNIGHT_NETWORK='testnet' docker compose up -d proof-server",
     "compile": "bun --filter @accountun/contract --elide-lines=0 compile",
+    "fetch-zk-params": "bun ./scripts/fetch-zk-params.ts",
     "cli": "bun --filter @accountun/cli --elide-lines=0 cli"
   }
 }

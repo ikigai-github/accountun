@@ -1,5 +1,0 @@
-module Utils {
-  export pure circuit emptyHash(): Bytes<32> {
-    return default<Bytes<32>>;
-  }
-}

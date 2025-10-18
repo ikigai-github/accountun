@@ -7,9 +7,7 @@ import path from "node:path";
 export function registerResultsCommand(program: Command) {
   program
     .command("results")
-    .description(
-      "Post the results of a tournament with the accounting contract",
-    )
+    .description("Post the results of a tournament")
     .requiredOption("--id <uuid>", "tournament id (UUID string")
     .requiredOption(
       "--csv <players>",

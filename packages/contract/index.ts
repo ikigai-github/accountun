@@ -3,6 +3,6 @@ export * from "./wallet";
 export * from "./contract";
 export * from "./providers";
 export * from "./tournament";
-export * from "./currency-entry";
+export * from "./conversion";
 export * from "./client";
 export * from "./constants";

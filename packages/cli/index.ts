@@ -12,6 +12,7 @@ import {
 import { registerPlanCommand } from "./commands/plan";
 import { registerCompleteCommand } from "./commands/complete";
 import { registerReceiptsCommand } from "./commands/receipts";
+import { registerReadyCommand } from "./commands/ready";
 
 const program = new Command()
   .name("accountun")
@@ -25,6 +26,7 @@ registerFundCommand(program);
 registerCancelCommand(program);
 registerResultsCommand(program);
 registerPlanCommand(program);
+registerReadyCommand(program);
 registerReceiptsCommand(program);
 registerCompleteCommand(program);
 

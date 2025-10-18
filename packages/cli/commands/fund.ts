@@ -1,14 +1,18 @@
 import { Command } from "commander";
-import { joinContract, recordFunding, withClient } from "@accountun/contract";
+import {
+  joinContract,
+  recordFunding,
+  withClient,
+  type RawCurrencyEntry,
+} from "@accountun/contract";
 
 export function registerFundCommand(program: Command) {
   program
     .command("fund")
-    .description("Record funding for a tournament with the accounting contract")
+    .description("Record funding for a tournament")
     .requiredOption("--id <uuid>", "tournament id (UUID string")
     .requiredOption("--amount <amount>", "amount to fund (in cash asset units)")
     .requiredOption("--entity-id <entityId>", "sponsor id (UUID string)")
-    .requiredOption("--salt <salt>", "salt (32 byte hex string)")
     .requiredOption("--timestamp <timestamp>", "timestamp (unix epoch seconds")
     .option("--address <address>", "override the state stores contract address")
     .action(
@@ -16,12 +20,11 @@ export function registerFundCommand(program: Command) {
         id: string;
         amount: string;
         entityId: string;
-        salt: string;
         timestamp: string;
         address?: string;
       }) => {
         await withClient(async (client) => {
-          const { id, amount, entityId, salt, timestamp, address } = options;
+          const { id, amount, entityId, timestamp, address } = options;
 
           console.log(
             "ℹ Joining tournament contract for network:",
@@ -29,10 +32,9 @@ export function registerFundCommand(program: Command) {
           );
           const deployed = await joinContract(client, { address });
 
-          const currencyEntry = {
+          const currencyEntry: RawCurrencyEntry = {
             timestamp,
             entityId,
-            salt,
             amount,
           };
 
