@@ -5,7 +5,7 @@ import {
   saveWallet,
   withWallet,
 } from "@accountun/contract";
-import { getConfig } from "../config";
+import { getConfig } from "@accountun/contract";
 
 export function registerWalletCommand(program: Command) {
   program

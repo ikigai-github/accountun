@@ -6,7 +6,7 @@ import {
   type MidnightClient,
 } from "./index";
 
-import { getConfig } from "../cli/config";
+import { getConfig } from "./config";
 
 /**
  * Creates and initializes a Midnight client with configuration, providers, contract, wallet, and private state.
@@ -40,7 +40,7 @@ export async function initializeClient(): Promise<MidnightClient> {
  * @returns the result of the function invocation
  */
 export async function withClient<T>(
-  fn: (client: MidnightClient) => Promise<T>
+  fn: (client: MidnightClient) => Promise<T>,
 ): Promise<T> {
   const config = getConfig();
   return withWallet(config, async (wallet) => {

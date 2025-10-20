@@ -1,5 +1,5 @@
 import { bytes16FromHex, isHex32 } from "@accountun/common";
-import { type MidnightConfig, type NetworkName } from "@accountun/contract";
+import type { MidnightConfig, NetworkName } from "./types";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 

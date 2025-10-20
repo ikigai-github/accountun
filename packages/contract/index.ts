@@ -6,3 +6,4 @@ export * from "./tournament";
 export * from "./conversion";
 export * from "./client";
 export * from "./constants";
+export * from "./config";
