@@ -1,3 +1,5 @@
+#!/usr/bin/env bun
+
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { bearerAuth } from "hono/bearer-auth";
@@ -6,10 +8,9 @@ import {
   assertFunding,
   assertResults,
   assertReceipts,
-  type CurrencyEntryInput,
+  type CurrencyEntry,
 } from "./types";
 import {
-  initializeClient,
   withClient,
   joinContract,
   registerTournament,
@@ -23,11 +24,11 @@ import {
 
 const app = new Hono();
 
-app.use("*", bearerAuth({ token: process.env.WRITER_BEARER ?? "" }));
+app.use("*", bearerAuth({ token: process.env.BEAR_TOKEN ?? "" }));
 app.get("/health", (c) => c.json({ ok: true }));
 
 // Register a tournament
-app.post("/v1/tournaments", async (context) => {
+app.post("/v1/tournament", async (context) => {
   const body = await context.req.json();
   const { id, cash = "usd" } = assertRegister(body);
 
@@ -39,7 +40,7 @@ app.post("/v1/tournaments", async (context) => {
 });
 
 // Record funding
-app.post("/v1/tournaments/:id/funding", async (context) => {
+app.post("/v1/tournament/:id/funding", async (context) => {
   const id = context.req.param("id");
   const body = await context.req.json();
   const { entries } = assertFunding(body);
@@ -47,7 +48,7 @@ app.post("/v1/tournaments/:id/funding", async (context) => {
   return withClient(async (client) => {
     const deployed = await joinContract(client);
     const results: { txHash: string; txId: string }[] = [];
-    for (const e of entries as CurrencyEntryInput[]) {
+    for (const e of entries as CurrencyEntry[]) {
       const tx = await recordFunding(deployed, id, e);
       results.push({ txHash: tx.public.txHash, txId: tx.public.txId });
     }
@@ -56,7 +57,7 @@ app.post("/v1/tournaments/:id/funding", async (context) => {
 });
 
 // Post placements (results)
-app.post("/v1/tournaments/:id/results", async (context) => {
+app.post("/v1/tournament/:id/results", async (context) => {
   const id = context.req.param("id");
   const body = await context.req.json();
   const { placements } = assertResults(body);
@@ -69,7 +70,7 @@ app.post("/v1/tournaments/:id/results", async (context) => {
 });
 
 // Mark payout-ready
-app.post("/v1/tournaments/:id/ready", async (context) => {
+app.post("/v1/tournament/:id/ready", async (context) => {
   const id = context.req.param("id");
   return withClient(async (client) => {
     const deployed = await joinContract(client);
@@ -79,7 +80,7 @@ app.post("/v1/tournaments/:id/ready", async (context) => {
 });
 
 // Record receipts
-app.post("/v1/tournaments/:id/receipts", async (context) => {
+app.post("/v1/tournament/:id/receipts", async (context) => {
   const id = context.req.param("id");
   const body = await context.req.json();
   const { entries } = assertReceipts(body);
@@ -87,7 +88,7 @@ app.post("/v1/tournaments/:id/receipts", async (context) => {
   return withClient(async (client) => {
     const deployed = await joinContract(client);
     const results: { txHash: string; txId: string }[] = [];
-    for (const e of entries as CurrencyEntryInput[]) {
+    for (const e of entries as CurrencyEntry[]) {
       const tx = await recordReceipt(deployed, id, e);
       results.push({ txHash: tx.public.txHash, txId: tx.public.txId });
     }
@@ -96,7 +97,7 @@ app.post("/v1/tournaments/:id/receipts", async (context) => {
 });
 
 // Complete tournament
-app.post("/v1/tournaments/:id/complete", async (context) => {
+app.post("/v1/tournament/:id/complete", async (context) => {
   const id = context.req.param("id");
   return withClient(async (client) => {
     const deployed = await joinContract(client);
@@ -106,7 +107,7 @@ app.post("/v1/tournaments/:id/complete", async (context) => {
 });
 
 // Cancel tournament
-app.post("/v1/tournaments/:id/cancel", async (context) => {
+app.post("/v1/tournament/:id/cancel", async (context) => {
   const id = context.req.param("id");
   return withClient(async (client) => {
     const deployed = await joinContract(client);

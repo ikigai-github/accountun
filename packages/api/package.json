@@ -4,19 +4,19 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "bun run --hot ./index.ts",
-    "listen": "./index.ts"
+    "api": "./index.ts"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "ts-patch": "^3.3.0"
   },
   "peerDependencies": {
-    "typescript": "^5"
+    "typescript": "~5.9.2"
   },
   "dependencies": {
-    "hono": "^4.10.1",
-    "typia": "^9.7.2",
     "@accountun/common": "workspace:*",
-    "@accountun/contract": "workspace:*"
+    "@accountun/contract": "workspace:*",
+    "@sinclair/typebox": "^0.34.41",
+    "hono": "^4.10.1"
   }
 }

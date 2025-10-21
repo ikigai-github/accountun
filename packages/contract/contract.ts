@@ -39,7 +39,7 @@ export async function deployContract(
   secretKey: Uint8Array,
   contract: Contract,
   providers: Providers,
-  state: PrivateState,
+  state: PrivateState
 ) {
   const args: InitialStateParams = [secretKey];
   const options: DeployContractOptionsWithPrivateState<Contract> = {
@@ -62,7 +62,7 @@ export async function deployContract(
 export async function joinKnownContract(
   contractAddress: ContractAddress,
   contract: Contract,
-  providers: Providers,
+  providers: Providers
 ) {
   return await findDeployedContract<Contract>(providers, {
     contractAddress,
@@ -79,7 +79,7 @@ export async function joinKnownContract(
  */
 export async function joinContract(
   context: MidnightClient,
-  options?: { address?: string },
+  options?: { address?: string }
 ) {
   const address =
     options?.address ??
@@ -99,7 +99,7 @@ export async function joinContract(
 export async function saveAddress(
   stateDir: string,
   network: string,
-  address: string,
+  address: string
 ) {
   await rotateWriteFile(
     path.join(stateDir, `${network}-contract-address.json`),
@@ -109,8 +109,8 @@ export async function saveAddress(
         savedAt: new Date().toISOString(),
       },
       null,
-      2,
-    ),
+      2
+    )
   );
 }
 
@@ -136,7 +136,7 @@ export async function loadAddress(stateDir: string, network: string) {
  * @returns The private state if it exists, otherwise null
  */
 export async function getPrivateState(
-  providers: Providers,
+  providers: Providers
 ): Promise<PrivateState | null> {
   return await providers.privateStateProvider.get(PrivateStateKey);
 }

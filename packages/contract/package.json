@@ -4,7 +4,7 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "compile": "script -qec 'compactc compact/Main.compact managed' /dev/null"
+    "compile": "rm -rf managed && script -qec 'compactc compact/Main.compact managed' /dev/null"
   },
   "devDependencies": {
     "@types/bun": "latest"
