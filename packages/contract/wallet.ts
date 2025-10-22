@@ -90,7 +90,7 @@ export async function buildWallet(
     indexerWsUri,
     proofServerUri,
     substrateNodeUri,
-    stateDir,
+    cacheDir,
     network,
   } = config;
 
@@ -104,7 +104,7 @@ export async function buildWallet(
   const midnightJsNetworkId = networkNameToMidnightJsNetworkId(network);
   setMidnightJsNetworkId(midnightJsNetworkId);
 
-  const stateFile = path.join(stateDir, `${network}-wallet-state.json`);
+  const stateFile = path.join(cacheDir, `${network}-wallet-state.json`);
 
   let wallet: Wallet;
   if ((await fileExists(stateFile)) && !forceFromSeed) {
@@ -246,15 +246,15 @@ export async function getTokenBalance(
 /**
  * Save the wallet state to disk
  * @param network network the wallet state is for
- * @param stateDir directory to save the wallet state in
+ * @param cacheDir directory to save the wallet state in
  * @param wallet the started wallet instance to save state from
  */
 export async function saveWallet(
   network: NetworkName,
-  stateDir: string,
+  cacheDir: string,
   wallet: Wallet,
 ) {
-  const stateFile = path.join(stateDir, `${network}-wallet-state.json`);
+  const stateFile = path.join(cacheDir, `${network}-wallet-state.json`);
   const state = await wallet.serializeState();
   await writeFile(stateFile, state);
 }

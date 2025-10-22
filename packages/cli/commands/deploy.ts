@@ -23,7 +23,7 @@ export function registerDeployCommand(program: Command) {
         const address = result.deployTxData.public.contractAddress;
 
         // Save the address to be used with other commands
-        await saveAddress(config.stateDir, config.network, address);
+        await saveAddress(config.cacheDir, config.network, address);
 
         console.log("✅ Deployed contract address:", address);
       });

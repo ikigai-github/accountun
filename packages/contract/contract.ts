@@ -39,7 +39,7 @@ export async function deployContract(
   secretKey: Uint8Array,
   contract: Contract,
   providers: Providers,
-  state: PrivateState
+  state: PrivateState,
 ) {
   const args: InitialStateParams = [secretKey];
   const options: DeployContractOptionsWithPrivateState<Contract> = {
@@ -62,7 +62,7 @@ export async function deployContract(
 export async function joinKnownContract(
   contractAddress: ContractAddress,
   contract: Contract,
-  providers: Providers
+  providers: Providers,
 ) {
   return await findDeployedContract<Contract>(providers, {
     contractAddress,
@@ -79,11 +79,11 @@ export async function joinKnownContract(
  */
 export async function joinContract(
   context: MidnightClient,
-  options?: { address?: string }
+  options?: { address?: string },
 ) {
   const address =
     options?.address ??
-    (await loadAddress(context.config.stateDir, context.config.network));
+    (await loadAddress(context.config.cacheDir, context.config.network));
 
   console.log("Joining contract at address:", address);
 
@@ -92,36 +92,36 @@ export async function joinContract(
 
 /**
  * Saves the contract address to a file in the state directory
- * @param stateDir The state directory to save the address file in
+ * @param cacheDir The state directory to save the address file in
  * @param network The network name to use in the address file name
  * @param address The contract address to save
  */
 export async function saveAddress(
-  stateDir: string,
+  cacheDir: string,
   network: string,
-  address: string
+  address: string,
 ) {
   await rotateWriteFile(
-    path.join(stateDir, `${network}-contract-address.json`),
+    path.join(cacheDir, `${network}-contract-address.json`),
     JSON.stringify(
       {
         address,
         savedAt: new Date().toISOString(),
       },
       null,
-      2
-    )
+      2,
+    ),
   );
 }
 
 /**
  * Loads the contract address from a file in the state directory
- * @param stateDir The state directory to load the address file from
+ * @param cacheDir The state directory to load the address file from
  * @param network The network name to use in the address file name
  * @returns The contract address loaded from the address file
  */
-export async function loadAddress(stateDir: string, network: string) {
-  const addressFile = path.join(stateDir, `${network}-contract-address.json`);
+export async function loadAddress(cacheDir: string, network: string) {
+  const addressFile = path.join(cacheDir, `${network}-contract-address.json`);
   const data = await readFile(addressFile);
   const parsed = JSON.parse(data);
   if (!parsed.address || typeof parsed.address !== "string") {
@@ -136,7 +136,7 @@ export async function loadAddress(stateDir: string, network: string) {
  * @returns The private state if it exists, otherwise null
  */
 export async function getPrivateState(
-  providers: Providers
+  providers: Providers,
 ): Promise<PrivateState | null> {
   return await providers.privateStateProvider.get(PrivateStateKey);
 }

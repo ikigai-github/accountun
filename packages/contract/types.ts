@@ -86,7 +86,7 @@ export type NetworkName = "mainnet" | "testnet" | "devnet" | "undeployed";
  * The configuration options for connecting to the Midnight Network and its services.
  */
 export type MidnightConfig = {
-  readonly stateDir: string;
+  readonly cacheDir: string;
   readonly substrateNodeUri: string;
   readonly indexerHttpUri: string;
   readonly indexerWsUri: string;

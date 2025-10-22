@@ -22,7 +22,7 @@ export function registerWalletCommand(program: Command) {
 
         // Save the wallet to disk for future runs
         console.log("ℹ Saving wallet to disk");
-        await saveWallet(config.network, config.stateDir, wallet);
+        await saveWallet(config.network, config.cacheDir, wallet);
 
         console.log("🌐 Network:", config.network);
         console.log("🔑 Wallet address:", state.address);

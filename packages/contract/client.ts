@@ -46,9 +46,6 @@ export async function withClient<T>(
   return withWallet(config, async (wallet) => {
     const providers = await createProviders(config, wallet);
 
-    // Ensure wallet state is saved on disk
-    //await saveWallet(config.stateDir, wallet);
-
     const secretKey = config.authSecret;
     const replacementKey = config.authReplacementKey ?? config.authSecret;
     const contract = createContract();

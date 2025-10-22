@@ -87,15 +87,15 @@ function getServiceWalletSeed(): string {
 }
 
 /**
- * Gets the path to the state directory. Defaults to ".state" in the root directory of the project.
- * @returns The path to the state directory, either from STATE_PATH env var or defaulting to root directiory .state
+ * Gets the path to the cache directory. Defaults to ".cache" in the root directory of the project.
+ * @returns The path to the cache directory, either from CACHE_PATH env var or defaulting to root directory .cache
  */
-function getStatePath(): string {
+function getCachePath(): string {
   const moduleDir = path.dirname(fileURLToPath(import.meta.url));
   const packageDir = path.dirname(moduleDir);
   const rootDir = path.dirname(packageDir);
 
-  return process.env.STATE_PATH || path.join(rootDir, ".state");
+  return process.env.CACHE_PATH || path.join(rootDir, ".cache");
 }
 
 /**
@@ -129,7 +129,7 @@ function getNetwork(): NetworkName {
  * @returns The complete configuration for connecting to midnight
  */
 export function getConfig(): MidnightConfig {
-  const stateDir = getStatePath();
+  const cacheDir = getCachePath();
   const serviceWalletSeedHex = getServiceWalletSeed();
   const authSecret = getAuthSecret();
   const authReplacementKey = getAuthReplacementKey();
@@ -148,7 +148,7 @@ export function getConfig(): MidnightConfig {
   const network = getNetwork();
 
   return {
-    stateDir,
+    cacheDir,
     authSecret,
     authReplacementKey,
     serviceWalletSeedHex,

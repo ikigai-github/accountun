@@ -4,7 +4,7 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "compile": "rm -rf managed && script -qec 'compactc compact/Main.compact managed' /dev/null"
+    "compile": "rm -rf ./managed && compactc ./compact/Main.compact ./managed"
   },
   "devDependencies": {
     "@types/bun": "latest"
@@ -16,18 +16,19 @@
     "@accountun/common": "workspace:*",
     "@midnight-ntwrk/compact-runtime": "^0.9.0",
     "@midnight-ntwrk/ledger": "^4.0.0",
-    "@midnight-ntwrk/wallet": "^5.0.0",
-    "@midnight-ntwrk/wallet-api": "^5.0.0",
-    "@midnight-ntwrk/zswap": "^4.0.0",
     "@midnight-ntwrk/midnight-js-contracts": "^2.0.2",
     "@midnight-ntwrk/midnight-js-http-client-proof-provider": "^2.0.2",
     "@midnight-ntwrk/midnight-js-indexer-public-data-provider": "^2.0.2",
     "@midnight-ntwrk/midnight-js-level-private-state-provider": "^2.0.2",
-    "@midnight-ntwrk/midnight-js-node-zk-config-provider": "^2.0.2",
     "@midnight-ntwrk/midnight-js-network-id": "2.0.2",
+    "@midnight-ntwrk/midnight-js-node-zk-config-provider": "^2.0.2",
     "@midnight-ntwrk/midnight-js-types": "^2.0.2",
+    "@midnight-ntwrk/wallet": "^5.0.0",
+    "@midnight-ntwrk/wallet-api": "^5.0.0",
+    "@midnight-ntwrk/zswap": "^4.0.0",
     "@noble/hashes": "^2.0.1",
-    "uuid": "^13.0.0",
-    "rxjs": "^7.8.2"
+    "rxjs": "^7.8.2",
+    "superjson": "^2.2.2",
+    "uuid": "^13.0.0"
   }
 }
