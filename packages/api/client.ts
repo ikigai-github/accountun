@@ -20,9 +20,10 @@ async function initClient(): Promise<MidnightClient> {
   let delay = MIN_DELAY_MS;
   while (true) {
     try {
+      console.log("initializing Midnight client");
       return await initializeClient();
     } catch (error: unknown) {
-      console.error("[midnight] initClient failed, retrying:", error);
+      console.error("initializing failed, retrying:", error);
       await new Promise((r) => setTimeout(r, delay));
       delay = Math.min(MAX_DELAY_MS, delay * 2);
     }

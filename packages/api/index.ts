@@ -37,7 +37,10 @@ app.openAPIRegistry.registerComponent("securitySchemes", "bearerAuth", {
   bearerFormat: "JWT",
 });
 
+// Simple token auth
 app.use("/v1/*", bearerAuth({ token: process.env.BEAR_TOKEN ?? "" }));
+
+// Attach midnight client and deployed contract context for routes that need them
 app.use("/v1/*", attachMidnightClient);
 app.use("/v1/*", attachDeployedContract);
 
@@ -78,7 +81,10 @@ app.openapi(
   async (context) => {
     const { id, cash = "usd" } = context.req.valid("json");
     const contract = context.get("contract");
+    console.log("Registering tournament with ID:", id);
+    console.log("Using cash asset name:", cash);
     const tx = await registerTournament(contract, id, cash);
+    console.log("Tournament registered, tx hash:", tx.public.txHash);
     return context.json({ txHash: tx.public.txHash, txId: tx.public.txId });
   },
 );
@@ -107,10 +113,13 @@ app.openapi(
     const { id } = context.req.valid("param");
     const { entries } = context.req.valid("json");
     const contract = context.get("contract");
+    console.log("Recording funding for tournament ID:", id);
 
     const results: { txHash: string; txId: string }[] = [];
     for (const entry of entries) {
+      console.log("++Recording funding entry:", entry);
       const tx = await recordFunding(contract, id, entry);
+      console.log("--Funding recorded, tx hash:", tx.public.txHash);
       results.push({ txHash: tx.public.txHash, txId: tx.public.txId });
     }
     return context.json({ ok: true, results });
@@ -141,7 +150,10 @@ app.openapi(
     const { id } = context.req.valid("param");
     const { placements } = context.req.valid("json");
     const contract = context.get("contract");
+    console.log("Posting results for tournament ID:", id);
+    console.log("Placements:", placements);
     const tx = await postResults(contract, id, placements);
+    console.log("Results posted, tx hash:", tx.public.txHash);
     return context.json({ txHash: tx.public.txHash, txId: tx.public.txId });
   },
 );
@@ -172,7 +184,9 @@ app.openapi(
 
     const results: { txHash: string; txId: string }[] = [];
     for (const entry of entries) {
+      console.log("++Planning payout entry:", entry);
       const tx = await planPayout(contract, id, entry);
+      console.log("--Payout planned, tx hash:", tx.public.txHash);
       results.push({ txHash: tx.public.txHash, txId: tx.public.txId });
     }
     return context.json({ ok: true, results });
@@ -196,7 +210,12 @@ app.openapi(
   async (context) => {
     const { id } = context.req.valid("param");
     const contract = context.get("contract");
+    console.log("Marking tournament ID as payout ready:", id);
     const tx = await payoutReady(contract, id);
+    console.log(
+      "Tournament marked as payout ready, tx hash:",
+      tx.public.txHash,
+    );
     return context.json({
       txHash: tx.public.txHash,
       txId: tx.public.txId,
@@ -229,9 +248,13 @@ app.openapi(
     const { entries } = context.req.valid("json");
     const contract = context.get("contract");
 
+    console.log("Recording receipts for tournament ID:", id);
+
     const results: { txHash: string; txId: string }[] = [];
     for (const entry of entries) {
+      console.log("++Recording receipt entry:", entry);
       const tx = await recordReceipt(contract, id, entry);
+      console.log("--Receipt recorded, tx hash:", tx.public.txHash);
       results.push({
         txHash: tx.public.txHash,
         txId: tx.public.txId,
@@ -261,7 +284,9 @@ app.openapi(
   async (context) => {
     const { id } = context.req.valid("param");
     const contract = context.get("contract");
+    console.log("Completing tournament ID:", id);
     const tx = await completeTournament(contract, id);
+    console.log("Tournament completed, tx hash:", tx.public.txHash);
     return context.json({
       txHash: tx.public.txHash,
       txId: tx.public.txId,
@@ -286,7 +311,9 @@ app.openapi(
   async (context) => {
     const { id } = context.req.valid("param");
     const contract = context.get("contract");
+    console.log("Cancelling tournament ID:", id);
     const tx = await cancelTournament(contract, id);
+    console.log("Tournament cancelled, tx hash:", tx.public.txHash);
     return context.json({
       txHash: tx.public.txHash,
       txId: tx.public.txId,
@@ -304,7 +331,6 @@ app.onError((err, context) => {
 const port = Number(process.env.PORT || 8787);
 const serverUrl = process.env.SERVER_URL ?? `http://localhost:${port}`;
 
-// OpenAPI doc endpoint
 app.doc("/openapi.json", {
   openapi: "3.0.0",
   info: {
@@ -316,18 +342,25 @@ app.doc("/openapi.json", {
   security: [{ bearerAuth: [] }],
 });
 
-// Start Listening
-const server = Bun.serve({ fetch: app.fetch, port });
+const server = Bun.serve({ fetch: app.fetch, port, development: false });
 
 console.log(`Listening on :${port}`);
 
-// Shutdown handler
+let shuttingDown = false;
 async function shutdown() {
-  console.log("Shutting down…");
-  await closeClient();
-  server.stop(true);
-  process.exit(0);
+  if (shuttingDown) return;
+  shuttingDown = true;
+
+  console.log("Shutting down");
+
+  try {
+    server.stop(true);
+    await closeClient();
+    console.log("Shutdown complete");
+  } finally {
+    process.exit(0);
+  }
 }
 
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
+process.once("SIGINT", shutdown);
+process.once("SIGTERM", shutdown);

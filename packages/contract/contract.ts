@@ -86,7 +86,6 @@ export async function joinContract(
     (await loadAddress(context.config.cacheDir, context.config.network));
 
   console.log("Joining contract at address:", address);
-
   return await joinKnownContract(address, context.contract, context.providers);
 }
 
