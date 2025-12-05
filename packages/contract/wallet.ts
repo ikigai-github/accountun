@@ -260,6 +260,34 @@ export async function saveWallet(
 }
 
 /**
+ * Utility to send tDust from the wallet to a receiver address
+ * @param wallet The wallet to send tDust from
+ * @param receiverAddress The receiver of the tDust
+ * @param amount The amount of tDust to send
+ * @returns
+ */
+export async function sendNativeToken(
+  wallet: Wallet,
+  receiverAddress: string,
+  amount: bigint,
+) {
+  if (amount <= 0n) {
+    throw new Error("Amount must be positive");
+  }
+
+  const unprovenTx = await wallet.transferTransaction([
+    {
+      amount,
+      type: nativeToken(),
+      receiverAddress,
+    },
+  ]);
+
+  const provenTx = await wallet.proveTransaction(unprovenTx);
+  return await wallet.submitTransaction(provenTx);
+}
+
+/**
  * Utility wrapper that starts a wallet, invokes a function, and then closes the wallet.
  * @param config Config for building the wallet
  * @param fn function to invoke using the started wallet

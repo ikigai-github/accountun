@@ -10,13 +10,13 @@
     "@types/bun": "latest"
   },
   "peerDependencies": {
-    "typescript": "~5.9.2"
+    "typescript": "~5.9.3"
   },
   "dependencies": {
     "@accountun/common": "workspace:*",
     "@accountun/contract": "workspace:*",
-    "@hono/zod-openapi": "^1.1.4",
-    "hono": "^4.10.1",
-    "zod": "^4.1.12"
+    "@hono/zod-openapi": "^1.1.5",
+    "hono": "^4.10.7",
+    "zod": "^4.1.13"
   }
 }

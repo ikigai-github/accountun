@@ -13,10 +13,14 @@ import {
   completeTournament,
   cancelTournament,
   planPayout,
+  sendNativeToken,
+  getTokenBalance,
 } from "@accountun/contract";
 
 import { attachDeployedContract, attachMidnightClient } from "./middleware";
 import {
+  DustBonusRequestSchema,
+  DustBonusResultsSchema,
   FundingRequestSchema,
   HealthResponseSchema,
   OkResultsSchema,
@@ -317,6 +321,69 @@ app.openapi(
     return context.json({
       txHash: tx.public.txHash,
       txId: tx.public.txId,
+    });
+  },
+);
+
+// Bonus Dust payouts
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/v1/tournament/{id}/bonus",
+    request: {
+      params: TournamentIdParamSchema,
+      body: {
+        content: { "application/json": { schema: DustBonusRequestSchema } },
+        required: true,
+      },
+    },
+    responses: {
+      200: {
+        description: "Accepted",
+        content: { "application/json": { schema: DustBonusResultsSchema } },
+      },
+    },
+    security: [{ bearerAuth: [] }],
+  }),
+  async (context) => {
+    const { id } = context.req.valid("param");
+    const { players } = context.req.valid("json");
+    const client = context.get("client");
+
+    const bonusDustAmount = 10n;
+
+    // Sync wallet state and get current balance
+    const balance = await getTokenBalance(client.wallet, {
+      maxBehind: 0n,
+      timeoutMs: 30_000,
+    });
+
+    // Check balances
+    const totalAmount = BigInt(players.length) * bonusDustAmount;
+
+    if (balance < totalAmount) {
+      throw new Error(
+        `Insufficient tDust balance (${balance}) to pay bonuses (${totalAmount})`,
+      );
+    }
+
+    const txs = [];
+    for (const player of players) {
+      console.log(
+        `Sending bonus tDust to player ${player.playerId} at address ${player.address}`,
+      );
+      const tx = await sendNativeToken(
+        client.wallet,
+        player.address,
+        bonusDustAmount,
+      );
+
+      txs.push(tx);
+    }
+
+    return context.json({
+      ok: true,
+      results: txs,
     });
   },
 );

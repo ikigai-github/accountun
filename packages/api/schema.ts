@@ -1,4 +1,5 @@
 import { z } from "@hono/zod-openapi";
+import { id } from "zod/locales";
 
 const U64String = z
   .string()
@@ -39,6 +40,26 @@ export const RegisterRequestSchema = z
     cash: z.string().optional(),
   })
   .openapi("RegisterRequest");
+
+export const DustBonusPlayerSchema = z
+  .object({
+    playerId: z.uuid(),
+    address: z.string(),
+  })
+  .openapi("DustBonusPlayer");
+
+export const DustBonusRequestSchema = z
+  .object({
+    players: z.array(DustBonusPlayerSchema),
+  })
+  .openapi("DustBonusRequest");
+
+export const DustBonusResultsSchema = z
+  .object({
+    ok: z.boolean(),
+    results: z.array(z.string()),
+  })
+  .openapi("DustBonusResults");
 
 // Params
 export const TournamentIdParamSchema = z
