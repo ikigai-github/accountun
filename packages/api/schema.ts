@@ -1,5 +1,4 @@
 import { z } from "@hono/zod-openapi";
-import { id } from "zod/locales";
 
 const U64String = z
   .string()
