@@ -23,6 +23,7 @@
     "docker:push:proof": "docker push accountun.azurecr.io/accountun-proof-server:latest",
     "docker:push:api": "docker push accountun.azurecr.io/accountun-api:latest",
     "docker:push": "bun run docker:push:proof && bun run docker:push:api",
-    "docker": "bun run docker:build && bun run docker:push"
+    "publish:api": "bun run docker:build:api && bun run docker:push:api",
+    "publish:proof": "bun run docker:build:proof && bun run docker:push:proof"
   }
 }

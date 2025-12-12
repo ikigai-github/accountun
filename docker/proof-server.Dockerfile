@@ -5,7 +5,7 @@ WORKDIR /app
 
 COPY scripts ./scripts
 
-ENV CIRCUIT_PARAM_RANGE="10 11 12 13 14 15 16 17"  # adjust if you want more/less
+ENV CIRCUIT_PARAM_RANGE="10 11 12 13 14 15 16 17"
 ENV ZK_PARAMS_DIR="/zk-params"
 
 RUN bun scripts/fetch-zk-params.ts
