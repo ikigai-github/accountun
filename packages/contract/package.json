@@ -4,7 +4,7 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "compile": "rm -rf ./managed && compactc ./compact/Main.compact ./managed"
+    "compile": "rm -rf ./managed && compact ./compact/Main.compact ./managed"
   },
   "devDependencies": {
     "@types/bun": "latest"

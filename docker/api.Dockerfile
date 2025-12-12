@@ -1,23 +1,39 @@
+# Stage 1: Install Compact Compiler
+FROM ubuntu:24.04 AS contract-builder
+
+RUN apt-get update && \
+    apt-get install -y curl ca-certificates \
+    xz-utils tar unzip && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN curl --proto '=https' --tlsv1.2 -LsSf https://github.com/midnightntwrk/compact/releases/download/compact-v0.3.0/compact-installer.sh | sh
+
+ENV PATH="/root/.local/bin:${PATH}"
+
+WORKDIR /app
+
+COPY packages/contract ./packages/contract
+
+WORKDIR /app/packages/contract
+
+RUN compact update
+RUN compact compile ./compact/Main.compact ./managed
+
+# Stage 2: Copy in api code and compiled contract artifacts then install and run.
 FROM oven/bun:1.3.3-alpine
 
 WORKDIR /app
 
-# Copy root manifests 
-COPY package.json bun.lock ./
-
-# Copy your packages (adjust path if your layout differs)
+COPY bun.lock package.json ./
 COPY packages ./packages
 
-# Install dependencies in production mode
+COPY --from=contract-builder /app/packages/contract/managed ./packages/contract/managed
+
 RUN bun install --ci --production
 
-# Environment defaults (can be overridden in Azure)
 ENV NODE_ENV=production
 ENV PORT=8787
 
-# Expose the port your API listens on
 EXPOSE 8787
 
-# Start the API
-# If your entrypoint differs, change this line accordingly.
 CMD ["bun", "packages/api/index.ts"]
