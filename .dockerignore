@@ -1,0 +1,14 @@
+# Never copy local deps / Bun cache into the image
+node_modules
+.bun
+**/node_modules
+**/.bun
+
+# Optional extra noise to ignore
+.git
+.gitignore
+Dockerfile
+.dockerignore
+dist
+build
+.tmp

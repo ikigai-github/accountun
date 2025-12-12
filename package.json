@@ -16,6 +16,13 @@
     "compile": "bun --filter @accountun/contract --elide-lines=0 compile",
     "fetch-zk-params": "docker compose down && bun ./scripts/fetch-zk-params.ts",
     "api": "./packages/api/index.ts",
-    "cli": "./packages/cli/index.ts"
+    "cli": "./packages/cli/index.ts",
+    "docker:build:proof": "docker build -t accountun.azurecr.io/accountun-proof-server:latest -f docker/proof-server.Dockerfile .",
+    "docker:build:api": "docker build -t accountun-api:latest -f docker/api.Dockerfile .",
+    "docker:build": "bun run docker:build:proof && bun run docker:build:api",
+    "docker:push:proof": "docker push accountun.azurecr.io/accountun-proof-server:latest",
+    "docker:push:api": "docker push accountun.azurecr.io/accountun-api:latest",
+    "docker:push": "bun run docker:push:proof && bun run docker:push:api",
+    "docker": "bun run docker:build && bun run docker:push"
   }
 }

@@ -95,6 +95,7 @@ export type MidnightConfig = {
   readonly authSecret: Uint8Array;
   readonly authReplacementKey?: Uint8Array;
   readonly network: NetworkName;
+  readonly contractAddress?: string;
 };
 
 /**

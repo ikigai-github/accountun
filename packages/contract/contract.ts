@@ -83,7 +83,14 @@ export async function joinContract(
 ) {
   const address =
     options?.address ??
+    context.config.contractAddress ??
     (await loadAddress(context.config.cacheDir, context.config.network));
+
+  if (!address) {
+    throw new Error(
+      "No contract address provided, CONTRACT_ADDRESS not set, and no saved address found in cache.",
+    );
+  }
 
   console.log("Joining contract at address:", address);
   return await joinKnownContract(address, context.contract, context.providers);

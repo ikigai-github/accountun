@@ -1,4 +1,4 @@
-import { bytes16FromHex, isHex32 } from "@accountun/common";
+import { bytes16FromHex, isHex, isHex32 } from "@accountun/common";
 import type { MidnightConfig, NetworkName } from "./types";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -87,6 +87,25 @@ function getServiceWalletSeed(): string {
 }
 
 /**
+ * Reads the CONTRACT_ADDRESS environment variable, if present.
+ * @returns The contract address string or undefined if not set or empty.
+ */
+function getContractAddress(): string | undefined {
+  const address = process.env.CONTRACT_ADDRESS?.trim();
+  if (!address) return undefined;
+
+  if (!isHex(address)) {
+    throw new Error("CONTRACT_ADDRESS is not a valid hex string");
+  }
+
+  if (address.length !== 68) {
+    throw new Error("CONTRACT_ADDRESS is not a valid 34-byte hex string");
+  }
+
+  return address;
+}
+
+/**
  * Gets the path to the cache directory. Defaults to ".cache" in the root directory of the project.
  * @returns The path to the cache directory, either from CACHE_PATH env var or defaulting to root directory .cache
  */
@@ -147,6 +166,8 @@ export function getConfig(): MidnightConfig {
     process.env.PROOF_SERVER_URI || defaultServiceUris.proofServerUri;
   const network = getNetwork();
 
+  const contractAddress = getContractAddress();
+
   return {
     cacheDir,
     authSecret,
@@ -157,5 +178,6 @@ export function getConfig(): MidnightConfig {
     indexerWsUri,
     proofServerUri,
     network,
+    contractAddress,
   };
 }
