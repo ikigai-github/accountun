@@ -19,4 +19,4 @@ ENV RUST_LOG=trace
 ENV RUST_BACKTRACE=full
 ENV MIDNIGHT_NETWORK=testnet
 
-CMD ["sh", "-c", "midnight-proof-server --network ${MIDNIGHT_NETWORK:-testnet} --verbose"]
+CMD ["midnight-proof-server --network ${MIDNIGHT_NETWORK:-undeployed} --verbose"]
