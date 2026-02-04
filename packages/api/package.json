@@ -15,8 +15,8 @@
   "dependencies": {
     "@accountun/common": "workspace:*",
     "@accountun/contract": "workspace:*",
-    "@hono/zod-openapi": "^1.1.5",
-    "hono": "^4.10.7",
-    "zod": "^4.1.13"
+    "@hono/zod-openapi": "^1.2.1",
+    "hono": "^4.11.7",
+    "zod": "^4.3.6"
   }
 }

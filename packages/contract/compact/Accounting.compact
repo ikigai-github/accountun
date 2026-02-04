@@ -86,9 +86,11 @@ module Accounting<#MaxPlacements, #AccountTreeDepth> {
   export circuit recordFunding(id: Bytes<16>, entry: CurrencyEntry): [] {
     const tournamentId = disclose(id);
     const state = states.lookup(tournamentId);
+    const kind = disclose(entry.kind);
     const hash = persistentHash<CurrencyEntry>(entry);
 
     assert(state == TournamentState.Registered, "Funding can only be recorded while tournament is still in newly registered state");
+    assert(kind == AccountKind.Funding, "Only funding entries can be recorded");
 
     checkAuthority();
 
