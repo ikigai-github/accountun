@@ -10,14 +10,12 @@ import { getConfig } from "./config";
 
 /**
  * Creates and initializes a Midnight client with configuration, providers, contract, wallet, and private state.
- * This will start the wallet which will need to be closed later with wallet.close().
+ * This will start the wallet which will need to be stopped later with wallet.stop().
  * @returns An initialized Midnight client with config, providers, contract, wallet, and private state
  */
 export async function initializeClient(): Promise<MidnightClient> {
   const config = getConfig();
   const wallet = await buildWallet(config);
-
-  wallet.start();
 
   const providers = await createProviders(config, wallet);
 

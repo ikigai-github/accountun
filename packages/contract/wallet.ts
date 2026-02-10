@@ -1,10 +1,26 @@
-import { WalletBuilder } from "@midnight-ntwrk/wallet";
-import { fileExists, isHex32, readFile, writeFile } from "@accountun/common";
-
-import { type MidnightConfig, type NetworkName, type Wallet } from "./types";
-
-import type { WalletState } from "@midnight-ntwrk/wallet-api";
-
+import { isHex32 } from "@accountun/common";
+import type { MidnightConfig, NetworkName, WalletContext } from "./types";
+import type { FacadeState } from "@midnight-ntwrk/wallet-sdk-facade";
+import { WalletFacade } from "@midnight-ntwrk/wallet-sdk-facade";
+import { ShieldedWallet } from "@midnight-ntwrk/wallet-sdk-shielded";
+import { DustWallet } from "@midnight-ntwrk/wallet-sdk-dust-wallet";
+import {
+  createKeystore,
+  InMemoryTransactionHistoryStorage,
+  PublicKey,
+  UnshieldedWallet,
+} from "@midnight-ntwrk/wallet-sdk-unshielded-wallet";
+import { HDWallet, Roles } from "@midnight-ntwrk/wallet-sdk-hd";
+import {
+  MidnightBech32m,
+  UnshieldedAddress,
+} from "@midnight-ntwrk/wallet-sdk-address-format";
+import * as ledger from "@midnight-ntwrk/ledger-v7";
+import { unshieldedToken } from "@midnight-ntwrk/ledger-v7";
+import {
+  getNetworkId,
+  setNetworkId as setMidnightJsNetworkId,
+} from "@midnight-ntwrk/midnight-js-network-id";
 import {
   bufferCount,
   filter,
@@ -16,83 +32,79 @@ import {
   throttleTime,
   timeout,
 } from "rxjs";
-import {
-  setNetworkId as setMidnightJsNetworkId,
-  NetworkId as MidnightJsNetworkId,
-} from "@midnight-ntwrk/midnight-js-network-id";
+import { Buffer } from "buffer";
 
-import { NetworkId as ZSwapNetworkId } from "@midnight-ntwrk/compact-runtime";
+type WalletState = FacadeState;
 
-import path from "node:path";
-import { nativeToken } from "@midnight-ntwrk/ledger";
+const DEFAULT_TTL_MS = 30 * 60 * 1000;
 
-/**
- * Maps from a string network name to the corresponding midnight-js-network-id enum value
- * @param name the name of the network (mainnet, testnet, devnet, undeployed)
- * @returns the corresponding midnight-js-network-id NetworkId
- */
-function networkNameToMidnightJsNetworkId(name: string): MidnightJsNetworkId {
-  switch (name.toLowerCase()) {
-    case "mainnet":
-      return MidnightJsNetworkId.MainNet;
-    case "devnet":
-      return MidnightJsNetworkId.DevNet;
-    case "testnet":
-      return MidnightJsNetworkId.TestNet;
-    case "undeployed":
-    default:
-      return MidnightJsNetworkId.Undeployed;
+function buildShieldedConfig(config: MidnightConfig) {
+  return {
+    networkId: getNetworkId(),
+    indexerClientConnection: {
+      indexerHttpUrl: config.indexerHttpUri,
+      indexerWsUrl: config.indexerWsUri,
+    },
+    provingServerUrl: new URL(config.proofServerUri),
+    relayURL: new URL(config.substrateNodeUri.replace(/^http/, "ws")),
+  };
+}
+
+function buildUnshieldedConfig(config: MidnightConfig) {
+  return {
+    networkId: getNetworkId(),
+    indexerClientConnection: {
+      indexerHttpUrl: config.indexerHttpUri,
+      indexerWsUrl: config.indexerWsUri,
+    },
+    txHistoryStorage: new InMemoryTransactionHistoryStorage(),
+  };
+}
+
+function buildDustConfig(config: MidnightConfig) {
+  return {
+    networkId: getNetworkId(),
+    costParameters: {
+      additionalFeeOverhead: 300_000_000_000_000n,
+      feeBlocksMargin: 5,
+    },
+    indexerClientConnection: {
+      indexerHttpUrl: config.indexerHttpUri,
+      indexerWsUrl: config.indexerWsUri,
+    },
+    provingServerUrl: new URL(config.proofServerUri),
+    relayURL: new URL(config.substrateNodeUri.replace(/^http/, "ws")),
+  };
+}
+
+function deriveKeysFromSeed(seedHex: string) {
+  const hdWallet = HDWallet.fromSeed(Buffer.from(seedHex, "hex"));
+  if (hdWallet.type !== "seedOk") {
+    throw new Error("Failed to initialize HDWallet from seed");
   }
-}
 
-/**
- * Maps from the Minight JS enum NetworkId to the ZSwap enum NetworkId
- * @param id the midnight-js-network-id NetworkId
- * @returns the corresponding zswap NetworkId
- */
-function midnightJsNetworkIdToZSwapId(id: MidnightJsNetworkId): ZSwapNetworkId {
-  switch (id) {
-    case MidnightJsNetworkId.MainNet:
-      return ZSwapNetworkId.MainNet;
-    case MidnightJsNetworkId.DevNet:
-      return ZSwapNetworkId.DevNet;
-    case MidnightJsNetworkId.TestNet:
-      return ZSwapNetworkId.TestNet;
-    case MidnightJsNetworkId.Undeployed:
-    default:
-      return ZSwapNetworkId.Undeployed;
+  const derivationResult = hdWallet.hdWallet
+    .selectAccount(0)
+    .selectRoles([Roles.Zswap, Roles.NightExternal, Roles.Dust])
+    .deriveKeysAt(0);
+
+  if (derivationResult.type !== "keysDerived") {
+    throw new Error("Failed to derive wallet keys");
   }
+
+  hdWallet.hdWallet.clear();
+  return derivationResult.keys;
 }
 
 /**
- * Get the remaining gap between current and target block height from the wallet state
- * @param state the wallet state to get the sync gap from
- * @returns the applyGap from the syncProgress lag, or 1,000,000 if unknown
- */
-export function getWalletSyncGap(state: WalletState): bigint {
-  const gap = state.syncProgress?.lag?.applyGap;
-  return typeof gap === "bigint" ? (gap > 0n ? gap : 0n) : 1_000_000n;
-}
-
-/**
- * Uses the provided config to either build a new wallet from seed or restore from file if a file exists.
+ * Builds a wallet from the configured seed using the wallet SDK facade.
  * @param config Config for connecting to midnight while building the wallet
- * @param forceFromSeed if true, will build from seed even if a state file exists
- * @returns a built or restored wallet (not started)
+ * @returns a started wallet context
  */
 export async function buildWallet(
   config: MidnightConfig,
-  forceFromSeed: boolean = false,
-): Promise<Wallet> {
-  const {
-    serviceWalletSeedHex,
-    indexerHttpUri,
-    indexerWsUri,
-    proofServerUri,
-    substrateNodeUri,
-    cacheDir,
-    network,
-  } = config;
+): Promise<WalletContext> {
+  const { serviceWalletSeedHex, network } = config;
 
   if (!isHex32(serviceWalletSeedHex)) {
     throw new Error(
@@ -101,40 +113,36 @@ export async function buildWallet(
   }
 
   // Whenever we build a wallet, we need to set the configured matching network ID
-  const midnightJsNetworkId = networkNameToMidnightJsNetworkId(network);
-  setMidnightJsNetworkId(midnightJsNetworkId);
+  setMidnightJsNetworkId(network);
 
-  const stateFile = path.join(cacheDir, `${network}-wallet-state.json`);
+  const keys = deriveKeysFromSeed(serviceWalletSeedHex);
+  const shieldedSecretKeys = ledger.ZswapSecretKeys.fromSeed(keys[Roles.Zswap]);
+  const dustSecretKey = ledger.DustSecretKey.fromSeed(keys[Roles.Dust]);
+  const unshieldedKeystore = createKeystore(
+    keys[Roles.NightExternal],
+    getNetworkId(),
+  );
 
-  let wallet: Wallet;
-  if ((await fileExists(stateFile)) && !forceFromSeed) {
-    const serialized = await readFile(stateFile);
-    console.log(`Restoring wallet from state file: ${stateFile}`);
-    // restore(seed, serializedState)
-    wallet = await WalletBuilder.restore(
-      indexerHttpUri,
-      indexerWsUri,
-      proofServerUri,
-      substrateNodeUri,
-      serviceWalletSeedHex,
-      serialized,
-      "info",
-      false,
-    );
-  } else {
-    wallet = await WalletBuilder.build(
-      indexerHttpUri,
-      indexerWsUri,
-      proofServerUri,
-      substrateNodeUri,
-      serviceWalletSeedHex,
-      midnightJsNetworkIdToZSwapId(midnightJsNetworkId),
-      "info",
-      false,
-    );
-  }
+  const shieldedWallet = ShieldedWallet(
+    buildShieldedConfig(config),
+  ).startWithSecretKeys(shieldedSecretKeys);
+  const unshieldedWallet = UnshieldedWallet(
+    buildUnshieldedConfig(config),
+  ).startWithPublicKey(PublicKey.fromKeyStore(unshieldedKeystore));
+  const dustWallet = DustWallet(buildDustConfig(config)).startWithSecretKey(
+    dustSecretKey,
+    ledger.LedgerParameters.initialParameters().dust,
+  );
 
-  return wallet;
+  const wallet = new WalletFacade(shieldedWallet, unshieldedWallet, dustWallet);
+  await wallet.start(shieldedSecretKeys, dustSecretKey);
+
+  return {
+    wallet,
+    shieldedSecretKeys,
+    dustSecretKey,
+    unshieldedKeystore,
+  };
 }
 
 /**
@@ -143,9 +151,9 @@ export async function buildWallet(
  * @returns The unsynced wallet state
  */
 export async function getWalletStateUnsynced(
-  wallet: Wallet,
+  wallet: WalletContext,
 ): Promise<WalletState> {
-  return firstValueFrom(wallet.state());
+  return firstValueFrom(wallet.wallet.state());
 }
 
 /**
@@ -155,22 +163,20 @@ export async function getWalletStateUnsynced(
  * @returns The wallet state once synced
  */
 export async function getWalletState(
-  wallet: Wallet,
+  wallet: WalletContext,
   options?: {
-    maxBehind?: bigint; // default 0n (fully synced)
     timeoutMs?: number; // default 3 min
     throttleMs?: number; // progress throttle (default 2s)
     minConsecutive?: number; // require N consecutive ok samples (default 2)
-    onProgress?: (p: { scanned: bigint; gap: bigint }) => void;
+    onProgress?: (p: { synced: boolean }) => void;
   },
 ): Promise<WalletState> {
-  const maxBehind = options?.maxBehind ?? 0n;
   const timeoutMs = options?.timeoutMs ?? 180_000;
   const throttleMs = options?.throttleMs ?? 2_000;
   const minConsecutive = Math.max(1, options?.minConsecutive ?? 2);
 
   // One shared, replayed source for both waiting & reading
-  const src$ = wallet
+  const src$ = wallet.wallet
     .state()
     .pipe(shareReplay({ bufferSize: 1, refCount: true }));
 
@@ -180,12 +186,7 @@ export async function getWalletState(
       throttleTime(throttleMs, undefined, { leading: true, trailing: true }),
       tap((s: WalletState) => {
         if (!options?.onProgress) return;
-        const scanned =
-          typeof s.syncProgress?.synced === "bigint"
-            ? s.syncProgress.synced
-            : 0n;
-        const gap = getWalletSyncGap(s);
-        options.onProgress({ scanned, gap });
+        options.onProgress({ synced: s.isSynced });
       }),
     )
     .subscribe();
@@ -196,7 +197,7 @@ export async function getWalletState(
     const gate$ = src$.pipe(
       map<WalletState, Gate>((state) => ({
         state,
-        ok: getWalletSyncGap(state) <= maxBehind,
+        ok: state.isSynced,
       })),
       bufferCount(minConsecutive, 1),
       filter(
@@ -223,51 +224,32 @@ export async function getWalletState(
  * @returns  The balance of the specified asset (or native token if none specified)
  */
 export async function getTokenBalance(
-  wallet: Wallet,
+  wallet: WalletContext,
   options?: {
-    assetId?: string; // defaults to nativeToken()
-    maxBehind?: bigint; // how close to "synced" you require (default 0n)
+    assetId?: string; // defaults to unshieldedToken().raw
     timeoutMs?: number; // default 120s
-    onProgress?: (info: { scanned: bigint; remaining: bigint }) => void;
+    onProgress?: (info: { synced: boolean }) => void;
   },
 ): Promise<bigint> {
-  const assetId = options?.assetId ?? nativeToken();
-  const maxBehind = options?.maxBehind ?? 0n;
+  const assetId = options?.assetId ?? unshieldedToken().raw;
   const timeoutMs = options?.timeoutMs ?? 120_000;
 
   const state = await getWalletState(wallet, {
-    maxBehind,
     timeoutMs,
   });
 
-  return state.balances?.[assetId] ?? 0n;
+  return state.unshielded.balances?.[assetId] ?? 0n;
 }
 
 /**
- * Save the wallet state to disk
- * @param network network the wallet state is for
- * @param cacheDir directory to save the wallet state in
- * @param wallet the started wallet instance to save state from
- */
-export async function saveWallet(
-  network: NetworkName,
-  cacheDir: string,
-  wallet: Wallet,
-) {
-  const stateFile = path.join(cacheDir, `${network}-wallet-state.json`);
-  const state = await wallet.serializeState();
-  await writeFile(stateFile, state);
-}
-
-/**
- * Utility to send tDust from the wallet to a receiver address
- * @param wallet The wallet to send tDust from
- * @param receiverAddress The receiver of the tDust
- * @param amount The amount of tDust to send
+ * Utility to send unshielded tNight from the wallet to a receiver address
+ * @param wallet The wallet to send tNight from
+ * @param receiverAddress The receiver of the tNight
+ * @param amount The amount of tNight to send
  * @returns
  */
 export async function sendNativeToken(
-  wallet: Wallet,
+  wallet: WalletContext,
   receiverAddress: string,
   amount: bigint,
 ) {
@@ -275,16 +257,38 @@ export async function sendNativeToken(
     throw new Error("Amount must be positive");
   }
 
-  const unprovenTx = await wallet.transferTransaction([
-    {
-      amount,
-      type: nativeToken(),
-      receiverAddress,
-    },
-  ]);
+  const networkId = getNetworkId();
+  const unshieldedAddress = MidnightBech32m.parse(receiverAddress).decode(
+    UnshieldedAddress,
+    networkId,
+  );
 
-  const provenTx = await wallet.proveTransaction(unprovenTx);
-  return await wallet.submitTransaction(provenTx);
+  const recipe = await wallet.wallet.transferTransaction(
+    [
+      {
+        type: "unshielded",
+        outputs: [
+          {
+            amount,
+            type: unshieldedToken().raw,
+            receiverAddress: unshieldedAddress.hexString,
+          },
+        ],
+      },
+    ],
+    {
+      shieldedSecretKeys: wallet.shieldedSecretKeys,
+      dustSecretKey: wallet.dustSecretKey,
+    },
+    { ttl: new Date(Date.now() + DEFAULT_TTL_MS) },
+  );
+
+  const signedTx = await wallet.wallet.signUnprovenTransaction(
+    recipe.transaction,
+    (payload) => wallet.unshieldedKeystore.signData(payload),
+  );
+  const finalized = await wallet.wallet.finalizeTransaction(signedTx);
+  return await wallet.wallet.submitTransaction(finalized);
 }
 
 /**
@@ -295,13 +299,12 @@ export async function sendNativeToken(
  */
 export async function withWallet<T>(
   config: MidnightConfig,
-  fn: (wallet: Wallet) => Promise<T>,
+  fn: (wallet: WalletContext) => Promise<T>,
 ): Promise<T> {
   const wallet = await buildWallet(config);
   try {
-    wallet.start();
     return await fn(wallet);
   } finally {
-    await wallet.close();
+    await wallet.wallet.stop();
   }
 }

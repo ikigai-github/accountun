@@ -1,9 +1,10 @@
-import { Contract as ManagedContract } from "./managed/contract/index.cjs";
+import { Contract as ManagedContract } from "./managed/contract/index.js";
 import {
   deployContract as internalDeployContract,
   findDeployedContract,
   type DeployContractOptionsWithPrivateState,
 } from "@midnight-ntwrk/midnight-js-contracts";
+import { CompiledContract } from "@midnight-ntwrk/compact-js";
 
 import type {
   Contract,
@@ -18,6 +19,7 @@ import { readFile, rotateWriteFile } from "@accountun/common";
 
 import path from "node:path";
 import { PrivateStateKey } from "./constants";
+import { fileURLToPath } from "node:url";
 
 /**
  * Creates a new contract instance.
@@ -26,6 +28,16 @@ import { PrivateStateKey } from "./constants";
 export function createContract(): Contract {
   return new ManagedContract<PrivateState>(witnesses);
 }
+
+const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+const managedDir = path.join(moduleDir, "managed");
+const compiledContract = CompiledContract.make<Contract>(
+  "main",
+  ManagedContract,
+).pipe(
+  CompiledContract.withWitnesses(witnesses),
+  CompiledContract.withCompiledFileAssets(managedDir),
+);
 
 /**
  * Utility wrapper to deploy the tournament accounting contract
@@ -44,7 +56,7 @@ export async function deployContract(
   const args: InitialStateParams = [secretKey];
   const options: DeployContractOptionsWithPrivateState<Contract> = {
     privateStateId: PrivateStateKey,
-    contract,
+    compiledContract,
     initialPrivateState: state,
     args,
   };
@@ -66,7 +78,7 @@ export async function joinKnownContract(
 ) {
   return await findDeployedContract<Contract>(providers, {
     contractAddress,
-    contract,
+    compiledContract,
     privateStateId: PrivateStateKey,
   });
 }

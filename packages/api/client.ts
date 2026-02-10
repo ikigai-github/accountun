@@ -1,7 +1,6 @@
 import type { MidnightClient } from "@accountun/contract";
 import { initializeClient } from "@accountun/contract/client";
 import { joinContract, type DeployedContract } from "@accountun/contract";
-import { saveWallet } from "@accountun/contract/wallet";
 
 let client: MidnightClient | null = null;
 let deployed: DeployedContract | null = null;
@@ -93,8 +92,7 @@ export async function closeClient(): Promise<void> {
   try {
     if (client) {
       const { config, wallet } = client;
-      await saveWallet(config.network, config.cacheDir, wallet);
-      await wallet.close();
+      await wallet.wallet.stop();
     }
   } catch (e) {
     console.warn("[midnight] close error:", e);

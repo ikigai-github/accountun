@@ -1,26 +1,10 @@
 import {
-  type BalancedTransaction,
   type MidnightProvider,
-  type UnbalancedTransaction,
   type WalletProvider,
-  createBalancedTx,
 } from "@midnight-ntwrk/midnight-js-types";
-
-import {
-  NetworkId,
-  Transaction as ZswapTransaction,
-} from "@midnight-ntwrk/zswap";
-import {
-  getLedgerNetworkId,
-  getZswapNetworkId,
-} from "@midnight-ntwrk/midnight-js-network-id";
-import type { Wallet } from "../types";
-import {
-  type CoinInfo,
-  Transaction,
-  type TransactionId,
-} from "@midnight-ntwrk/ledger";
+import type { WalletContext } from "../types";
 import { getWalletStateUnsynced } from "../wallet";
+import * as ledger from "@midnight-ntwrk/ledger-v7";
 
 /**
  * Utility wrapper to create a wallet provider that wraps a started wallet instance
@@ -28,39 +12,87 @@ import { getWalletStateUnsynced } from "../wallet";
  * @returns a wallet provider that wraps the wallet and implements WalletProvider and MidnightProvider
  */
 export async function createWalletProvider(
-  wallet: Wallet,
+  wallet: WalletContext,
 ): Promise<WalletProvider & MidnightProvider> {
   // Don't wait for wallet to be fully synced because we just need the keys and ability to submit transactions
   const state = await getWalletStateUnsynced(wallet);
   return {
-    coinPublicKey: state.coinPublicKey,
-    encryptionPublicKey: state.encryptionPublicKey,
-    balanceTx(
-      tx: UnbalancedTransaction,
-      newCoins: CoinInfo[],
-    ): Promise<BalancedTransaction> {
-      return wallet
-        .balanceTransaction(
-          ZswapTransaction.deserialize(
-            tx.serialize(getLedgerNetworkId()),
-            getZswapNetworkId(),
-          ),
-          newCoins,
-        )
-        .then((tx: any) => wallet.proveTransaction(tx))
-        .then(
-          (zswapTx: {
-            serialize: (arg0: NetworkId) => Uint8Array<ArrayBufferLike>;
-          }) =>
-            Transaction.deserialize(
-              zswapTx.serialize(getZswapNetworkId()),
-              getLedgerNetworkId(),
-            ),
-        )
-        .then(createBalancedTx);
+    getCoinPublicKey() {
+      return state.shielded.coinPublicKey.toHexString();
     },
-    submitTx(tx: BalancedTransaction): Promise<TransactionId> {
-      return wallet.submitTransaction(tx);
+    getEncryptionPublicKey() {
+      return state.shielded.encryptionPublicKey.toHexString();
+    },
+    async balanceTx(tx, ttl?) {
+      const recipe = await wallet.wallet.balanceUnboundTransaction(
+        tx,
+        {
+          shieldedSecretKeys: wallet.shieldedSecretKeys,
+          dustSecretKey: wallet.dustSecretKey,
+        },
+        { ttl: ttl ?? new Date(Date.now() + 30 * 60 * 1000) },
+      );
+
+      const signFn = (payload: Uint8Array) =>
+        wallet.unshieldedKeystore.signData(payload);
+      signTransactionIntents(recipe.baseTransaction, signFn, "proof");
+      if (recipe.balancingTransaction) {
+        signTransactionIntents(
+          recipe.balancingTransaction,
+          signFn,
+          "pre-proof",
+        );
+      }
+
+      return wallet.wallet.finalizeRecipe(recipe);
+    },
+    submitTx(tx) {
+      return wallet.wallet.submitTransaction(tx);
     },
   };
 }
+
+/**
+ * Sign all unshielded offers in a transaction's intents using the correct proof marker.
+ */
+const signTransactionIntents = (
+  tx: { intents?: Map<number, any> },
+  signFn: (payload: Uint8Array) => ledger.Signature,
+  proofMarker: "proof" | "pre-proof",
+): void => {
+  if (!tx.intents || tx.intents.size === 0) return;
+
+  for (const segment of tx.intents.keys()) {
+    const intent = tx.intents.get(segment);
+    if (!intent) continue;
+
+    const cloned = ledger.Intent.deserialize<
+      ledger.SignatureEnabled,
+      ledger.Proofish,
+      ledger.PreBinding
+    >("signature", proofMarker, "pre-binding", intent.serialize());
+
+    const sigData = cloned.signatureData(segment);
+    const signature = signFn(sigData);
+
+    if (cloned.fallibleUnshieldedOffer) {
+      const sigs = cloned.fallibleUnshieldedOffer.inputs.map(
+        (_: ledger.UtxoSpend, i: number) =>
+          cloned.fallibleUnshieldedOffer!.signatures.at(i) ?? signature,
+      );
+      cloned.fallibleUnshieldedOffer =
+        cloned.fallibleUnshieldedOffer.addSignatures(sigs);
+    }
+
+    if (cloned.guaranteedUnshieldedOffer) {
+      const sigs = cloned.guaranteedUnshieldedOffer.inputs.map(
+        (_: ledger.UtxoSpend, i: number) =>
+          cloned.guaranteedUnshieldedOffer!.signatures.at(i) ?? signature,
+      );
+      cloned.guaranteedUnshieldedOffer =
+        cloned.guaranteedUnshieldedOffer.addSignatures(sigs);
+    }
+
+    tx.intents.set(segment, cloned);
+  }
+};

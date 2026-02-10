@@ -2,7 +2,12 @@ import { indexerPublicDataProvider } from "@midnight-ntwrk/midnight-js-indexer-p
 import { httpClientProofProvider } from "@midnight-ntwrk/midnight-js-http-client-proof-provider";
 import { NodeZkConfigProvider } from "@midnight-ntwrk/midnight-js-node-zk-config-provider";
 
-import type { CircuitKeys, MidnightConfig, Providers, Wallet } from "../types";
+import type {
+  CircuitKeys,
+  MidnightConfig,
+  Providers,
+  WalletContext,
+} from "../types";
 
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -17,7 +22,7 @@ import { createSqlitePrivateStateProvider } from "./sqlite-state-provider";
  */
 export async function createProviders(
   config: MidnightConfig,
-  wallet: Wallet,
+  wallet: WalletContext,
 ): Promise<Providers> {
   const privateStateProvider = createSqlitePrivateStateProvider(config);
 
@@ -30,7 +35,10 @@ export async function createProviders(
   const contractsDir = path.join(moduleUrl, "..", "managed");
   const zkConfigProvider = new NodeZkConfigProvider<CircuitKeys>(contractsDir);
 
-  const proofProvider = httpClientProofProvider(config.proofServerUri);
+  const proofProvider = httpClientProofProvider(
+    config.proofServerUri,
+    zkConfigProvider,
+  );
 
   const walletProvider = await createWalletProvider(wallet);
 

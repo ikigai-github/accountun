@@ -17,8 +17,8 @@ type MidnightServiceUris = Pick<
  */
 function getLocalServiceUris(): MidnightServiceUris {
   const substrateNodeUri = "http://127.0.0.1:9944";
-  const indexerHttpUri = "http://127.0.0.1:8088/api/v1/graphql";
-  const indexerWsUri = "ws://127.0.0.1:8088/api/v1/graphql/ws";
+  const indexerHttpUri = "http://127.0.0.1:8088/api/v3/graphql";
+  const indexerWsUri = "ws://127.0.0.1:8088/api/v3/graphql/ws";
   const proofServerUri = "http://127.0.0.1:6300";
 
   return {
@@ -33,12 +33,28 @@ function getLocalServiceUris(): MidnightServiceUris {
  * Returns the default configuration for connecting to the Midnight testnet.
  * @returns The default testnet configuration
  */
-function getTestnetServiceUris(): MidnightServiceUris {
-  const substrateNodeUri = "https://rpc.testnet-02.midnight.network";
+function getPreviewServiceUris(): MidnightServiceUris {
+  const substrateNodeUri = "https://rpc.preview.midnight.network";
   const indexerHttpUri =
-    "https://indexer.testnet-02.midnight.network/api/v1/graphql";
+    "https://indexer.preview.midnight.network/api/v3/graphql";
   const indexerWsUri =
-    "wss://indexer.testnet-02.midnight.network/api/v1/graphql/ws";
+    "wss://indexer.preview.midnight.network/api/v3/graphql/ws";
+  const proofServerUri = "http://127.0.0.1:6300";
+
+  return {
+    substrateNodeUri,
+    indexerHttpUri,
+    indexerWsUri,
+    proofServerUri,
+  };
+}
+
+function getPreprodServiceUris(): MidnightServiceUris {
+  const substrateNodeUri = "https://rpc.preprod.midnight.network";
+  const indexerHttpUri =
+    "https://indexer.preprod.midnight.network/api/v3/graphql";
+  const indexerWsUri =
+    "wss://indexer.preprod.midnight.network/api/v3/graphql/ws";
   const proofServerUri = "http://127.0.0.1:6300";
 
   return {
@@ -123,9 +139,14 @@ function getCachePath(): string {
  * @returns the name if it is a valid network name
  */
 function isNetwork(name: string): name is NetworkName {
-  return ["mainnet", "testnet", "devnet", "undeployed"].includes(
-    name.toLowerCase(),
-  );
+  return [
+    "mainnet",
+    "testnet",
+    "devnet",
+    "preview",
+    "preprod",
+    "undeployed",
+  ].includes(name.toLowerCase());
 }
 
 /**
@@ -133,11 +154,26 @@ function isNetwork(name: string): name is NetworkName {
  * @returns the network name to use (mainnet, testnet, devnet, undeployed)
  */
 function getNetwork(): NetworkName {
-  const network = process.env.NETWORK ? process.env.NETWORK : "testnet";
+  const network = process.env.NETWORK ? process.env.NETWORK : "preprod";
   if (!isNetwork(network)) {
     throw new Error(`Invalid network: ${network}`);
   }
   return network;
+}
+
+function getRemoteServiceUris(network: NetworkName): MidnightServiceUris {
+  switch (network) {
+    case "preview":
+      return getPreviewServiceUris();
+    case "preprod":
+      return getPreprodServiceUris();
+    case "undeployed":
+      return getLocalServiceUris();
+    default:
+      throw new Error(
+        `Unsupported network '${network}'. Use preview, preprod, or undeployed.`,
+      );
+  }
 }
 
 /**
@@ -152,10 +188,11 @@ export function getConfig(): MidnightConfig {
   const serviceWalletSeedHex = getServiceWalletSeed();
   const authSecret = getAuthSecret();
   const authReplacementKey = getAuthReplacementKey();
+  const network = getNetwork();
   const defaultServiceUris =
     process.env.NETWORK_MODE === "local"
       ? getLocalServiceUris()
-      : getTestnetServiceUris();
+      : getRemoteServiceUris(network);
   const substrateNodeUri =
     process.env.SUBSTRATE_NODE_URI || defaultServiceUris.substrateNodeUri;
   const indexerHttpUri =
@@ -164,8 +201,6 @@ export function getConfig(): MidnightConfig {
     process.env.INDEXER_WS_URI || defaultServiceUris.indexerWsUri;
   const proofServerUri =
     process.env.PROOF_SERVER_URI || defaultServiceUris.proofServerUri;
-  const network = getNetwork();
-
   const contractAddress = getContractAddress();
 
   return {
