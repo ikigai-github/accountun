@@ -5,8 +5,8 @@
   "private": true,
   "scripts": {
     "compile": "rm -rf ./managed && compact compile ./compact/Main.compact ./managed",
-    "test": "vitest run",
-    "test:integration": "NETWORK_MODE=local NETWORK=undeployed vitest run -c vitest.integration.config.ts"
+    "test": "bun test test/dust-utils.test.ts",
+    "test:integration": "NETWORK_MODE=local NETWORK=undeployed bun test test/integration --preload test/integration/setup.ts --timeout 1500000"
   },
   "devDependencies": {
     "@types/bun": "latest",

@@ -1,33 +1,11 @@
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { describe, it } from "vitest";
-import type { MidnightConfig } from "../../types";
+import { describe, it } from "bun:test";
 import {
   buildWallet,
   getUnshieldedBalance,
   getWalletState,
   rebalanceNight,
 } from "../../wallet";
-
-const packageDir = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "../..",
-);
-
-function buildLocalConfig(seedHex: string): MidnightConfig {
-  return {
-    cacheDir: path.join(packageDir, ".cache", "integration"),
-    authSecret: new Uint8Array(16).fill(7),
-    serviceWalletSeedHex: seedHex,
-    network: (process.env.NETWORK ?? "undeployed") as MidnightConfig["network"],
-    substrateNodeUri: process.env.SUBSTRATE_NODE_URI ?? "http://127.0.0.1:9944",
-    indexerHttpUri:
-      process.env.INDEXER_HTTP_URI ?? "http://127.0.0.1:8088/api/v3/graphql",
-    indexerWsUri:
-      process.env.INDEXER_WS_URI ?? "ws://127.0.0.1:8088/api/v3/graphql/ws",
-    proofServerUri: process.env.PROOF_SERVER_URI ?? "http://127.0.0.1:6300",
-  };
-}
+import { buildIntegrationConfig } from "./config";
 
 async function waitForBalanceAtLeast(
   wallet: Awaited<ReturnType<typeof buildWallet>>,
@@ -55,7 +33,7 @@ describe("wallet integration", () => {
       throw new Error("SERVICE_WALLET_SEED_HEX must be set");
     }
 
-    const config = buildLocalConfig(seedHex);
+    const config = buildIntegrationConfig(seedHex);
     console.info(
       `[integration] endpoints: node=${config.substrateNodeUri} indexer=${config.indexerHttpUri} proof=${config.proofServerUri}`,
     );
