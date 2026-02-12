@@ -24,6 +24,11 @@
     "docker:push:api": "docker push accountun.azurecr.io/accountun-api:latest",
     "docker:push": "bun run docker:push:proof && bun run docker:push:api",
     "publish:api": "bun run docker:build:api && bun run docker:push:api",
-    "publish:proof": "bun run docker:build:proof && bun run docker:push:proof"
+    "publish:proof": "bun run docker:build:proof && bun run docker:push:proof",
+    "test": "bun --filter @accountun/common test && bun --filter @accountun/contract test",
+    "test:integration": "bun --filter @accountun/contract test:integration",
+    "fund:local": "bun ./scripts/fund-local.ts",
+    "health:local": "bun ./scripts/health-check.ts",
+    "dust:register": "bun ./scripts/register-dust.ts"
   }
 }

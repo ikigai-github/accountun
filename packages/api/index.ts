@@ -13,8 +13,8 @@ import {
   completeTournament,
   cancelTournament,
   planPayout,
-  sendNativeToken,
-  getTokenBalance,
+  sendUnshieldedToken,
+  getUnshieldedBalance,
 } from "@accountun/contract";
 
 import { attachDeployedContract, attachMidnightClient } from "./middleware";
@@ -353,8 +353,7 @@ app.openapi(
     const bonusDustAmount = 10n;
 
     // Sync wallet state and get current balance
-    const balance = await getTokenBalance(client.wallet, {
-      maxBehind: 0n,
+    const balance = await getUnshieldedBalance(client.wallet, {
       timeoutMs: 30_000,
     });
 
@@ -372,7 +371,7 @@ app.openapi(
       console.log(
         `Sending bonus tDust to player ${player.playerId} at address ${player.address}`,
       );
-      const tx = await sendNativeToken(
+      const tx = await sendUnshieldedToken(
         client.wallet,
         player.address,
         bonusDustAmount,

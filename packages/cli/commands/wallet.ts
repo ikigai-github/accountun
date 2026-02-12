@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import {
-  getTokenBalance,
+  getShieldedBalance,
+  getUnshieldedBalance,
   getWalletState,
   withWallet,
 } from "@accountun/contract";
@@ -24,7 +25,18 @@ export function registerWalletCommand(program: Command) {
           "🔑 Unshielded address:",
           wallet.unshieldedKeystore.getBech32Address(),
         );
-        console.log("✨ Unshielded balance:", await getTokenBalance(wallet));
+        console.log(
+          "✨ Native token balance:",
+          await getUnshieldedBalance(wallet),
+        );
+        console.log(
+          "🛡️ Shielded token balance:",
+          await getShieldedBalance(wallet),
+        );
+        console.log(
+          "🪙 Dust balance:",
+          state.dust.walletBalance(new Date()).toString(),
+        );
         console.log("🪙 Dust address:", state.dust.dustAddress);
       });
     });
