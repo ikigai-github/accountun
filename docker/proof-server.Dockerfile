@@ -1,5 +1,5 @@
 # 1. pre-fetch zk-SNARK parameters to bake into the image
-FROM oven/bun:1.3.3-alpine AS zk-builder
+FROM oven/bun:1.3.9-alpine AS zk-builder
 
 WORKDIR /app
 
