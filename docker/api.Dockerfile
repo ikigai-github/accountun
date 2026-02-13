@@ -6,7 +6,7 @@ RUN apt-get update && \
     xz-utils tar unzip && \
     rm -rf /var/lib/apt/lists/*
 
-RUN curl --proto '=https' --tlsv1.2 -LsSf https://github.com/midnightntwrk/compact/releases/download/compact-v0.3.0/compact-installer.sh | sh
+RUN curl --proto '=https' --tlsv1.2 -LsSf https://github.com/midnightntwrk/compact/releases/download/compact-v0.4.0/compact-installer.sh | sh
 
 ENV PATH="/root/.local/bin:${PATH}"
 
@@ -20,7 +20,7 @@ RUN compact update
 RUN compact compile ./compact/Main.compact ./managed
 
 # Stage 2: Copy in api code and compiled contract artifacts then install and run.
-FROM oven/bun:1.3.3-alpine
+FROM oven/bun:1.3.9-alpine
 
 WORKDIR /app
 

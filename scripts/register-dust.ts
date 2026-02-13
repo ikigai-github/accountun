@@ -1,5 +1,8 @@
 import { getConfig } from "../packages/contract/config";
-import { allocateDust, buildWallet } from "../packages/contract/wallet";
+import {
+  buildWallet,
+  registerAvailableDustCoins,
+} from "../packages/contract/wallet";
 
 async function main() {
   const config = getConfig();
@@ -9,13 +12,15 @@ async function main() {
 
   const wallet = await buildWallet(config);
   try {
-    const result = await allocateDust(wallet, { timeoutMs: 120_000 });
+    const result = await registerAvailableDustCoins(wallet, {
+      timeoutMs: 120_000,
+    });
     if (!result) {
-      console.info("[dust] no eligible UTXOs to register.");
+      console.info("[dust] no eligible coins to register.");
       return;
     }
     console.info(
-      `[dust] registered ${result.registeredUtxos} UTXOs (tx ${result.txId})`,
+      `[dust] registered ${result.registeredCoins} coins (tx ${result.txId})`,
     );
   } finally {
     await wallet.wallet.stop();

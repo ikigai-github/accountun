@@ -11,12 +11,11 @@ ENV ZK_PARAMS_DIR="/zk-params"
 RUN bun scripts/fetch-zk-params.ts
 
 # 2. build the proof server image with the pre-fetched parameters
-FROM midnightnetwork/proof-server:4.0.0
+FROM midnightntwrk/proof-server:7.0.0
 
 COPY --from=zk-builder /zk-params /.cache/midnight/zk-params
 
 ENV RUST_LOG=trace
 ENV RUST_BACKTRACE=full
-ENV MIDNIGHT_NETWORK=testnet
 
-CMD ["midnight-proof-server --network ${MIDNIGHT_NETWORK:-undeployed} --verbose"]
+CMD ["midnight-proof-server", "-v"]

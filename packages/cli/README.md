@@ -17,6 +17,7 @@ bun cli -h
 │                       contract address
 │   wallet              Construct the wallet from seed hex and print its address
 │                       and balance
+│   dust [options]      Registers Night for dust generation at a set of target addresses
 │   register [options]  Register a tournament
 │   fund [options]      Record funding for a tournament
 │   cancel [options]    Cancel a registered tournament
@@ -35,20 +36,20 @@ Environment variables can be set via normal means or via a dotenv file in this d
 AUTH_SECRET_HEX='NO-DEFAULT'
 AUTH_REPLACEMENT_KEY_HEX='NO-DEFAULT'
 SERVICE_WALLET_SEED_HEX='NO-DEFAULT'
-NETWORK='testnet' # Can be any valid midnight network name (case insensitive)
+NETWORK='preprod' # Supported remote defaults: preprod, preview
 NETWORK_MODE='remote' # Can be set to 'local' for local service URI defaults 
 STATE_PATH='.state' # Directory where state data is saved
 
 # Below are defaults if NETWORK_MODE is set to remote
-SUBSTRATE_NODE_URI='https://rpc.testnet-02.midnight.network'
-INDEXER_HTTP_URI='https://indexer.testnet-02.midnight.network/api/v1/graphql' 
-INDEXER_WS_URI='wss://indexer.testnet-02.midnight.network/api/v1/graphql/ws'
+SUBSTRATE_NODE_URI='https://rpc.preprod.midnight.network'
+INDEXER_HTTP_URI='https://indexer.preprod.midnight.network/api/v3/graphql' 
+INDEXER_WS_URI='wss://indexer.preprod.midnight.network/api/v3/graphql/ws'
 PROOF_SERVER_URI='http://127.0.0.1:6300'
 
 # Below are defaults if NETWORK_MODE is set to local
 SUBSTRATE_NODE_URI='http://127.0.0.1:9944'
-INDEXER_HTTP_URI='http://127.0.0.1:8088/api/v1/graphql' 
-INDEXER_WS_URI='ws://127.0.0.1:8088/api/v1/graphql/ws'
+INDEXER_HTTP_URI='http://127.0.0.1:8088/api/v3/graphql' 
+INDEXER_WS_URI='ws://127.0.0.1:8088/api/v3/graphql/ws'
 PROOF_SERVER_URI='http://127.0.0.1:6300'
 
 ```
@@ -59,6 +60,39 @@ The AUTH_SECRET_HEX, AUTH_REPLACEMENT_KEY_HEX, and SERVICE_WALLET_SEED_HEX need 
 
 The command `bun cli wallet` can help to setup. The command will try and restore a wallet from a state file if one is found. Otherwise it will use the afformentioned SERVICE_WALLET_SEED_HEX environment variable. Once the wallet is restored or built it will print the wallet address and current balance.
 
+### Allocating dust generation
+
+Use `bun cli dust` to allocate dust generation for a set of addresses.
+
+If `--csv` is omitted, all eligible dust is allocated back to the service wallet dust address.
+
+Example (allocate everything back to service dust address):
+
+```sh
+bun cli dust
+```
+
+Example with allocation targets:
+
+```sh
+bun cli dust \
+	--csv ./dust-allocations.csv
+```
+
+`dust-allocations.csv` should include columns:
+
+- `dustAddress` (required)
+- `targetDust` (required)
+- `allocationId` (optional)
+
+Example CSV:
+
+```sh
+dustAddress,targetDust,allocationId
+<bech32m-dust-address-1>,1000000,player-1
+<bech32m-dust-address-2>,500000,player-2
+```
+
 
 ### Contract Deployment
 
@@ -68,15 +102,15 @@ Below are the detailed steps for deploying the contract.  You can run package sp
 
 ```sh
 ❯ bun compile
-│ Compiling 8 circuits:
+│ Compiling 9 circuits:
 └─ Done in xx.xx s
 ```
 
 2. Start proof server if it has not already been started
 
 ```sh
-❯ bun testnet
-$ MIDNIGHT_NETWORK='testnet' docker compose up -d proof-server
+❯ bun proof-server
+$ docker compose up -d proof-server
 [+] Running 1/0
  ✔ Container accountun-proof-server-1  Running    
 ```
@@ -85,23 +119,23 @@ $ MIDNIGHT_NETWORK='testnet' docker compose up -d proof-server
 
 ```sh
 ❯ bun cli wallet
-│ Restoring wallet from state file: /home/cgarvis/projects/genun/accountun/.state/testnet-wallet-state.json
+│ Restoring wallet from state file: /home/cgarvis/projects/genun/accountun/.state/preprod-wallet-state.json
 │ ℹ Fetching wallet state from network
 │ ℹ Saving wallet to disk
-│ 🌐 Network: testnet
+│ 🌐 Network: preprod
 │ 🔑 Wallet address: mn_shield-addr_test16wp...(snipped)...d5d
 │ ✨ Dust balance: XXXXXXXXXn
 └─ Done in xx.xx s
 ```
 
-If your wallet doesn't yet have dust you can request funds from the [Testnet Faucet|https://midnight.network/test-faucet] with the wallet address printed above.
+If your wallet doesn't yet have dust you can request funds from the Midnight faucet for your selected network using the wallet address printed above.
 
 4. Deploy the contract
 
 ```sh
 ❯ bun cli deploy
-│ Restoring wallet from state file: /your/project/dir/accountun/.state/testnet-wallet-state.json
-│ ℹ Deploying contract for network: testnet
+│ Restoring wallet from state file: /your/project/dir/accountun/.state/preprod-wallet-state.json
+│ ℹ Deploying contract for network: preprod
 │ ✅ Deployed contract address: 020...(snipped)...4e5
 └─ Done in XX.XX s
 ```

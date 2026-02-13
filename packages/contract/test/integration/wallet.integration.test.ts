@@ -3,7 +3,7 @@ import {
   buildWallet,
   getUnshieldedBalance,
   getWalletState,
-  rebalanceNight,
+  rebalanceUnshieldedNightCoins,
 } from "../../wallet";
 import { buildIntegrationConfig } from "./config";
 
@@ -54,7 +54,11 @@ describe("wallet integration", () => {
       }
 
       console.info("[integration] splitting coins");
-      await rebalanceNight(wallet, [splitAmount, splitAmount, splitAmount]);
+      await rebalanceUnshieldedNightCoins(wallet, [
+        splitAmount,
+        splitAmount,
+        splitAmount,
+      ]);
 
       const afterSplit = await getWalletState(wallet, { timeoutMs: 120_000 });
       const afterSplitCount = afterSplit.unshielded.availableCoins.length;
@@ -67,7 +71,7 @@ describe("wallet integration", () => {
 
       console.info("[integration] merging coins");
       const mergeAmount = splitAmount * 3n;
-      await rebalanceNight(wallet, [mergeAmount]);
+      await rebalanceUnshieldedNightCoins(wallet, [mergeAmount]);
 
       const afterMerge = await getWalletState(wallet, { timeoutMs: 120_000 });
       const afterMergeCount = afterMerge.unshielded.availableCoins.length;

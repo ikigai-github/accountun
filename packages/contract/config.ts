@@ -30,8 +30,8 @@ function getLocalServiceUris(): MidnightServiceUris {
 }
 
 /**
- * Returns the default configuration for connecting to the Midnight testnet.
- * @returns The default testnet configuration
+ * Returns the default configuration for connecting to the Midnight preview network.
+ * @returns The default preview configuration
  */
 function getPreviewServiceUris(): MidnightServiceUris {
   const substrateNodeUri = "https://rpc.preview.midnight.network";
@@ -178,9 +178,9 @@ function getRemoteServiceUris(network: NetworkName): MidnightServiceUris {
 
 /**
  * Reads configuration from environment variables. Falls back to defaults if
- * environment variables are not set for non-critical values.  If NETWORK_MODE
- * is set to "local", will use local service uris, otherwise will use testnet
- * service uris.
+ * environment variables are not set for non-critical values. If NETWORK_MODE
+ * is set to "local", local service URIs are used; otherwise remote service
+ * URIs are selected from the configured network (preview/preprod).
  * @returns The complete configuration for connecting to midnight
  */
 export function getConfig(): MidnightConfig {

@@ -9,7 +9,7 @@ export function isDustRegistered(coin: UnshieldedCoinLike): boolean {
   return coin.meta?.registeredForDustGeneration === true;
 }
 
-export function isDustEligibleNightUtxo(
+export function isDustEligibleUnshieldedNightCoin(
   coin: UnshieldedCoinLike,
   tokenRaw: string = unshieldedToken().raw,
 ): boolean {

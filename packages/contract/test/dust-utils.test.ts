@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import {
-  isDustEligibleNightUtxo,
+  isDustEligibleUnshieldedNightCoin,
   isDustRegistered,
   type UnshieldedCoinLike,
 } from "../utilities/dust";
@@ -16,7 +16,7 @@ describe("dust utilities", () => {
     ...overrides,
   });
 
-  it("detects registered dust UTXOs", () => {
+  it("detects registered dust coins", () => {
     expect(
       isDustRegistered(
         baseCoin({ meta: { registeredForDustGeneration: true } }),
@@ -30,15 +30,15 @@ describe("dust utilities", () => {
     expect(isDustRegistered(baseCoin())).toBe(false);
   });
 
-  it("detects eligible NIGHT UTXOs", () => {
-    expect(isDustEligibleNightUtxo(baseCoin())).toBe(true);
+  it("detects eligible unshielded NIGHT coins", () => {
+    expect(isDustEligibleUnshieldedNightCoin(baseCoin())).toBe(true);
     expect(
-      isDustEligibleNightUtxo(
+      isDustEligibleUnshieldedNightCoin(
         baseCoin({ meta: { registeredForDustGeneration: true } }),
       ),
     ).toBe(false);
     expect(
-      isDustEligibleNightUtxo(
+      isDustEligibleUnshieldedNightCoin(
         baseCoin({ utxo: { type: "not-night", txId: "tx", index: 0 } }),
       ),
     ).toBe(false);

@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "compile": "rm -rf ./managed && compact compile ./compact/Main.compact ./managed",
-    "test": "bun test test/dust-utils.test.ts",
+    "test": "bun test test/dust-utils.test.ts test/wallet.unit.test.ts",
     "test:integration": "NETWORK_MODE=local NETWORK=undeployed bun test test/integration --preload test/integration/setup.ts --timeout 1500000"
   },
   "devDependencies": {

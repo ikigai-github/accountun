@@ -33,12 +33,44 @@ import {
   timeout,
 } from "rxjs";
 import { Buffer } from "buffer";
-import { isDustEligibleNightUtxo, isDustRegistered } from "./utilities/dust";
+import {
+  isDustEligibleUnshieldedNightCoin,
+  isDustRegistered,
+} from "./utilities/dust";
 
 type WalletState = FacadeState;
 type UnshieldedCoinWithMeta = {
   utxo: ledger.Utxo;
   meta: { ctime: Date; registeredForDustGeneration?: boolean };
+};
+
+export type DustAllocationRequest = {
+  dustAddress: string;
+  targetDust: bigint;
+  allocationId?: string;
+};
+
+export type DustAllocationApplied = {
+  dustAddress: string;
+  targetDust: bigint;
+  targetAmount: bigint;
+  allocationId?: string;
+  selectedCoin: {
+    txId?: string;
+    index?: number;
+    value: bigint;
+  };
+  registrationTxId: string;
+};
+
+export type DustAllocationSummary = {
+  serviceDustAddress: string;
+  requestedCount: number;
+  estimatedTotalAmount: bigint;
+  rebalanceTxId: string | null;
+  allocations: DustAllocationApplied[];
+  remainderRegistrationTxId: string | null;
+  remainderRegisteredCoins: number;
 };
 
 const DEFAULT_TTL_MS = 30 * 60 * 1000;
@@ -54,6 +86,78 @@ function median(values: bigint[]): bigint {
   }
   const sorted = [...values].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   return sorted[Math.floor((sorted.length - 1) / 2)]!;
+}
+
+function absoluteDiff(a: bigint, b: bigint): bigint {
+  return a >= b ? a - b : b - a;
+}
+
+function isNightCoin(
+  coin: { utxo: { type: string } },
+  tokenRaw: string = unshieldedToken().raw,
+): boolean {
+  return coin.utxo.type === tokenRaw;
+}
+
+function normalizeRequests(
+  requests: readonly DustAllocationRequest[],
+): DustAllocationRequest[] {
+  const grouped = new Map<string, DustAllocationRequest>();
+
+  for (const request of requests) {
+    MidnightBech32m.parse(request.dustAddress);
+    if (request.targetDust <= 0n) {
+      throw new Error("Each target dust amount must be positive");
+    }
+
+    const existing = grouped.get(request.dustAddress);
+    if (!existing) {
+      grouped.set(request.dustAddress, { ...request });
+      continue;
+    }
+
+    grouped.set(request.dustAddress, {
+      dustAddress: request.dustAddress,
+      targetDust: existing.targetDust + request.targetDust,
+      allocationId: existing.allocationId ?? request.allocationId,
+    });
+  }
+
+  return [...grouped.values()];
+}
+
+function pickCoinsForTargets(
+  coins: readonly UnshieldedCoinWithMeta[],
+  targets: readonly bigint[],
+  tolerancePercent: bigint,
+): Array<UnshieldedCoinWithMeta | null> {
+  const used = new Set<number>();
+
+  return targets.map((target) => {
+    const tolerance = (target * tolerancePercent) / 100n;
+    let best: {
+      coin: UnshieldedCoinWithMeta;
+      idx: number;
+      diff: bigint;
+    } | null = null;
+
+    for (let idx = 0; idx < coins.length; idx += 1) {
+      if (used.has(idx)) continue;
+      const coin = coins[idx]!;
+      const diff = absoluteDiff(coin.utxo.value, target);
+      if (diff > tolerance) continue;
+      if (!best || diff < best.diff) {
+        best = { coin, idx, diff };
+      }
+    }
+
+    if (!best) {
+      return null;
+    }
+
+    used.add(best.idx);
+    return best.coin;
+  });
 }
 
 function buildShieldedConfig(config: MidnightConfig) {
@@ -379,24 +483,24 @@ export async function sendShieldedToken(
 }
 
 /**
- * Register NIGHT/tNIGHT UTXOs for dust generation and optionally set a dust receiver address.
+ * Register NIGHT/tNIGHT coins for dust generation and optionally set a dust receiver address.
  * @param wallet The wallet context to use
  * @param options Optional configuration for dust registration
- * @returns The submitted transaction id and number of UTXOs registered
+ * @returns The submitted transaction id and number of coins registered
  */
-export async function allocateDust(
+export async function registerAvailableDustCoins(
   wallet: WalletContext,
   options?: {
     dustReceiverAddress?: string; // bech32m dust address
     timeoutMs?: number; // default 3 min
   },
-): Promise<{ txId: string; registeredUtxos: number } | null> {
+): Promise<{ txId: string; registeredCoins: number } | null> {
   const timeoutMs = options?.timeoutMs ?? 180_000;
   const state = await getWalletState(wallet, { timeoutMs });
 
   const unshieldedCoins = state.unshielded.availableCoins;
   const nightCoins = unshieldedCoins.filter((coin) =>
-    isDustEligibleNightUtxo(coin),
+    isDustEligibleUnshieldedNightCoin(coin),
   );
 
   if (nightCoins.length === 0) return null;
@@ -416,14 +520,14 @@ export async function allocateDust(
   const finalized = await wallet.wallet.finalizeRecipe(recipe);
   const txId = await wallet.wallet.submitTransaction(finalized);
 
-  return { txId, registeredUtxos: nightCoins.length };
+  return { txId, registeredCoins: nightCoins.length };
 }
 
 /**
- * Estimate the unshielded amount needed to reach a target dust cap, based on
- * current dust generation estimates for available, unregistered coins.
+ * Estimate the NIGHT coin amount needed to reach a target dust cap, based on
+ * current dust generation estimates for available NIGHT coins.
  */
-export async function estimateUnshieldedForDustTarget(
+export async function estimateCoinAmountForDustTarget(
   wallet: WalletContext,
   targetDust: bigint,
   options?: { timeoutMs?: number },
@@ -435,11 +539,11 @@ export async function estimateUnshieldedForDustTarget(
   const timeoutMs = options?.timeoutMs ?? 180_000;
   const state = await getWalletState(wallet, { timeoutMs });
   const unshieldedCoins = state.unshielded.availableCoins.filter((coin) =>
-    isDustEligibleNightUtxo(coin),
+    isNightCoin(coin),
   ) as UnshieldedCoinWithMeta[];
 
   if (unshieldedCoins.length === 0) {
-    throw new Error("No unregistered unshielded coins available");
+    throw new Error("No NIGHT coins available");
   }
 
   const now = new Date();
@@ -491,7 +595,7 @@ export async function selectDustCoinsForAmount(
 
   const state = await getWalletState(wallet, { timeoutMs });
   const unshieldedCoins = state.unshielded.availableCoins.filter((coin) =>
-    isDustEligibleNightUtxo(coin),
+    isDustEligibleUnshieldedNightCoin(coin),
   ) as UnshieldedCoinWithMeta[];
 
   const withinRange = unshieldedCoins.filter((coin) => {
@@ -521,10 +625,10 @@ export async function selectDustCoinsForAmount(
     return [];
   }
 
-  await rebalanceNight(wallet, [targetAmount], { timeoutMs });
+  await rebalanceUnshieldedNightCoins(wallet, [targetAmount], { timeoutMs });
   const updated = await getWalletState(wallet, { timeoutMs });
   const updatedCoins = updated.unshielded.availableCoins.filter((coin) =>
-    isDustEligibleNightUtxo(coin),
+    isDustEligibleUnshieldedNightCoin(coin),
   ) as UnshieldedCoinWithMeta[];
 
   return updatedCoins.filter((coin) => {
@@ -570,13 +674,156 @@ export async function registerDustCoins(
 }
 
 /**
- * Split/merge UTXOs by sending multiple outputs to a target address.
+ * Reconcile all dust allocations in one snapshot-style operation.
+ * Request allocations are applied,
+ * and remaining eligible coins are assigned back to the service dust address.
+ */
+export async function allocateDust(
+  wallet: WalletContext,
+  requests: readonly DustAllocationRequest[],
+  options?: {
+    timeoutMs?: number;
+    tolerancePercent?: bigint; // default 5
+    allowRebalance?: boolean; // default true
+  },
+): Promise<DustAllocationSummary> {
+  const normalized = normalizeRequests(requests);
+  const timeoutMs = options?.timeoutMs ?? 180_000;
+  const tolerancePercent = options?.tolerancePercent ?? 5n;
+  const allowRebalance = options?.allowRebalance ?? true;
+
+  if (tolerancePercent < 0n) {
+    throw new Error("Tolerance percent cannot be negative");
+  }
+
+  const initial = await getWalletState(wallet, { timeoutMs });
+  const serviceDustAddress = initial.dust.dustAddress;
+
+  const targetAmounts: bigint[] = [];
+  for (const req of normalized) {
+    const estimated = await estimateCoinAmountForDustTarget(
+      wallet,
+      req.targetDust,
+      { timeoutMs },
+    );
+    targetAmounts.push(estimated);
+  }
+
+  const estimatedTotalAmount = targetAmounts.reduce((a, b) => a + b, 0n);
+
+  let state = await getWalletState(wallet, { timeoutMs });
+  let eligibleCoins = state.unshielded.availableCoins.filter((coin) =>
+    isNightCoin(coin),
+  ) as UnshieldedCoinWithMeta[];
+
+  let selected = pickCoinsForTargets(
+    eligibleCoins,
+    targetAmounts,
+    tolerancePercent,
+  );
+
+  let rebalanceTxId: string | null = null;
+  if (selected.some((coin) => coin === null)) {
+    if (!allowRebalance) {
+      throw new Error(
+        "Unable to satisfy dust allocations from current coin set without rebalancing",
+      );
+    }
+
+    rebalanceTxId = await rebalanceUnshieldedNightCoins(wallet, targetAmounts, {
+      timeoutMs,
+    });
+    state = await getWalletState(wallet, { timeoutMs });
+    eligibleCoins = state.unshielded.availableCoins.filter((coin) =>
+      isNightCoin(coin),
+    ) as UnshieldedCoinWithMeta[];
+
+    selected = pickCoinsForTargets(
+      eligibleCoins,
+      targetAmounts,
+      tolerancePercent,
+    );
+    if (selected.some((coin) => coin === null)) {
+      throw new Error(
+        "Unable to satisfy dust allocations after rebalancing; consider increasing tolerance",
+      );
+    }
+  }
+
+  const allocations: DustAllocationApplied[] = [];
+  const selectedRefs = new Set<string>();
+
+  for (let i = 0; i < normalized.length; i += 1) {
+    const req = normalized[i]!;
+    const coin = selected[i]!;
+    if (!coin) {
+      throw new Error("Internal selection error while registering dust coins");
+    }
+
+    const txId = await registerDustCoins(wallet, [coin], {
+      timeoutMs,
+      dustReceiverAddress: req.dustAddress,
+    });
+
+    const coinTxId = (coin.utxo as { txId?: string }).txId;
+    const coinIndex = (coin.utxo as { index?: number }).index;
+    selectedRefs.add(`${coinTxId ?? ""}:${coinIndex ?? -1}`);
+
+    allocations.push({
+      dustAddress: req.dustAddress,
+      targetDust: req.targetDust,
+      targetAmount: targetAmounts[i]!,
+      allocationId: req.allocationId,
+      selectedCoin: {
+        txId: coinTxId,
+        index: coinIndex,
+        value: coin.utxo.value,
+      },
+      registrationTxId: txId,
+    });
+  }
+
+  const postAllocState = await getWalletState(wallet, { timeoutMs });
+  const remainderCoins = postAllocState.unshielded.availableCoins.filter(
+    (coin) => {
+      if (!isNightCoin(coin)) return false;
+      const txId = (coin.utxo as { txId?: string }).txId;
+      const index = (coin.utxo as { index?: number }).index;
+      return !selectedRefs.has(`${txId ?? ""}:${index ?? -1}`);
+    },
+  ) as UnshieldedCoinWithMeta[];
+
+  let remainderRegistrationTxId: string | null = null;
+  if (remainderCoins.length > 0) {
+    remainderRegistrationTxId = await registerDustCoins(
+      wallet,
+      remainderCoins,
+      {
+        timeoutMs,
+        dustReceiverAddress: serviceDustAddress,
+      },
+    );
+  }
+
+  return {
+    serviceDustAddress,
+    requestedCount: normalized.length,
+    estimatedTotalAmount,
+    rebalanceTxId,
+    allocations,
+    remainderRegistrationTxId,
+    remainderRegisteredCoins: remainderCoins.length,
+  };
+}
+
+/**
+ * Split/merge unshielded NIGHT coins by sending multiple outputs to a target address.
  * @param wallet The wallet context to use
  * @param amounts Output amounts to create (must be > 0)
  * @param options Optional configuration for the split/merge
  * @returns The submitted transaction id
  */
-export async function rebalanceNight(
+export async function rebalanceUnshieldedNightCoins(
   wallet: WalletContext,
   amounts: readonly bigint[],
   options?: {
@@ -634,42 +881,42 @@ export async function rebalanceNight(
   return await wallet.wallet.submitTransaction(finalized);
 }
 
-type UtxoRef = { txId: string; index: number };
+type CoinRef = { txId: string; index: number };
 
 /**
- * Deregister dust generation for specific NIGHT/tNIGHT UTXOs.
+ * Deregister dust generation for specific NIGHT/tNIGHT coins.
  * @param wallet The wallet context to use
- * @param utxos Transaction id + index references of the UTXOs to deregister
+ * @param coins Transaction id + index references of the coins to deregister
  * @param options Optional configuration
  * @returns The submitted transaction id
  */
-export async function deregisterDustForUtxos(
+export async function deregisterDustForCoins(
   wallet: WalletContext,
-  utxos: readonly UtxoRef[],
+  coins: readonly CoinRef[],
   options?: { timeoutMs?: number },
 ): Promise<string> {
-  if (utxos.length === 0) {
-    throw new Error("At least one UTXO reference is required");
+  if (coins.length === 0) {
+    throw new Error("At least one coin reference is required");
   }
 
   const timeoutMs = options?.timeoutMs ?? 180_000;
   const state = await getWalletState(wallet, { timeoutMs });
 
-  const coins = state.unshielded.availableCoins;
-  const refs = new Set(utxos.map((u) => `${u.txId}:${u.index}`));
-  const selected = coins.filter((coin) => {
+  const availableCoins = state.unshielded.availableCoins;
+  const refs = new Set(coins.map((u) => `${u.txId}:${u.index}`));
+  const selectedCoins = availableCoins.filter((coin) => {
     const txId = (coin.utxo as { txId?: string }).txId;
     const index = (coin.utxo as { index?: number }).index;
     if (typeof txId !== "string" || typeof index !== "number") return false;
     return refs.has(`${txId}:${index}`);
   });
 
-  if (selected.length === 0) {
-    throw new Error("No matching UTXOs found to deregister");
+  if (selectedCoins.length === 0) {
+    throw new Error("No matching coins found to deregister");
   }
 
   const recipe = await wallet.wallet.deregisterFromDustGeneration(
-    selected,
+    selectedCoins,
     wallet.unshieldedKeystore.getPublicKey(),
     (payload) => wallet.unshieldedKeystore.signData(payload),
   );
@@ -679,7 +926,7 @@ export async function deregisterDustForUtxos(
 }
 
 /**
- * Deregister dust generation for all currently registered NIGHT/tNIGHT UTXOs.
+ * Deregister dust generation for all currently registered NIGHT/tNIGHT coins.
  * @param wallet The wallet context to use
  * @param options Optional configuration
  * @returns The submitted transaction id, or null if nothing to deregister

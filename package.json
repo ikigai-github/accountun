@@ -12,7 +12,7 @@
     "clean": "find . -name node_modules -type d -prune -exec rm -rf {} + && rm -rf .cache ./packages/contract/managed && bun pm cache rm",
     "setup": "bun clean && bun install && bun run fetch-zk-params && bun run compile",
     "standalone": "docker compose stop && docker compose up -d",
-    "testnet": "MIDNIGHT_NETWORK='testnet' docker compose up -d proof-server",
+    "proof-server": "docker compose up -d proof-server",
     "compile": "bun --filter @accountun/contract --elide-lines=0 compile",
     "fetch-zk-params": "docker compose down && bun ./scripts/fetch-zk-params.ts",
     "api": "./packages/api/index.ts",
@@ -30,7 +30,6 @@
     "test:integration:wallet": "NETWORK_MODE=local NETWORK=undeployed bun test ./packages/contract/test/integration/wallet.integration.test.ts --preload ./packages/contract/test/integration/setup.ts --timeout 1500000",
     "test:integration:tournament": "NETWORK_MODE=local NETWORK=undeployed bun test ./packages/contract/test/integration/tournament.integration.test.ts --preload ./packages/contract/test/integration/setup.ts --timeout 1500000",
     "fund:local": "bun ./scripts/fund-local.ts",
-    "health:local": "bun ./scripts/health-check.ts",
     "dust:register": "bun ./scripts/register-dust.ts"
   }
 }

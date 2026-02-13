@@ -1,8 +1,8 @@
 import { getConfig } from "../packages/contract/config";
 import {
-  allocateDust,
   buildWallet,
   getUnshieldedBalance,
+  registerAvailableDustCoins,
   sendUnshieldedToken,
 } from "../packages/contract/wallet";
 
@@ -38,12 +38,12 @@ async function main() {
     };
     const senderWallet = await buildWallet(senderConfig);
     try {
-      const dustResult = await allocateDust(senderWallet, {
+      const dustResult = await registerAvailableDustCoins(senderWallet, {
         timeoutMs: 120_000,
       });
       if (dustResult) {
         console.info(
-          `[fund] registered ${dustResult.registeredUtxos} UTXOs for dust (tx ${dustResult.txId})`,
+          `[fund] registered ${dustResult.registeredCoins} coins for dust (tx ${dustResult.txId})`,
         );
       }
 
