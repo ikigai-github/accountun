@@ -2,9 +2,10 @@
 
 import { bearerAuth } from "hono/bearer-auth";
 import { HTTPException } from "hono/http-exception";
-import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
 
 import {
+  reconcileDustAllocations,
   registerTournament,
   recordFunding,
   postResults,
@@ -13,14 +14,15 @@ import {
   completeTournament,
   cancelTournament,
   planPayout,
-  sendUnshieldedToken,
-  getUnshieldedBalance,
+  registerAvailableDustCoins,
 } from "@accountun/contract";
 
 import { attachDeployedContract, attachMidnightClient } from "./middleware";
 import {
-  DustBonusRequestSchema,
-  DustBonusResultsSchema,
+  DustReconcileRequestSchema,
+  DustReconcileResponseSchema,
+  DustRegisterRequestSchema,
+  DustRegisterResponseSchema,
   FundingRequestSchema,
   HealthResponseSchema,
   OkResultsSchema,
@@ -33,6 +35,32 @@ import {
 import { closeClient } from "./client";
 
 const app = new OpenAPIHono();
+
+type TxRef = { txHash: string; txId: string };
+type SubmittedTx = { public: TxRef };
+
+function toTxRef(tx: SubmittedTx): TxRef {
+  return { txHash: tx.public.txHash, txId: tx.public.txId };
+}
+
+async function executeEntryBatch<TEntry>(
+  entries: readonly TEntry[],
+  options: {
+    beforeLogPrefix: string;
+    afterLogPrefix: string;
+    execute: (entry: TEntry) => Promise<SubmittedTx>;
+  },
+): Promise<TxRef[]> {
+  const results: TxRef[] = [];
+  for (const entry of entries) {
+    console.log(options.beforeLogPrefix, entry);
+    const tx = await options.execute(entry);
+    console.log(options.afterLogPrefix, tx.public.txHash);
+    results.push(toTxRef(tx));
+  }
+
+  return results;
+}
 
 // register bearer security scheme once (shows lock icon in UIs)
 app.openAPIRegistry.registerComponent("securitySchemes", "bearerAuth", {
@@ -89,7 +117,7 @@ app.openapi(
     console.log("Using cash asset name:", cash);
     const tx = await registerTournament(contract, id, cash);
     console.log("Tournament registered, tx hash:", tx.public.txHash);
-    return context.json({ txHash: tx.public.txHash, txId: tx.public.txId });
+    return context.json(toTxRef(tx));
   },
 );
 
@@ -119,13 +147,12 @@ app.openapi(
     const contract = context.get("contract");
     console.log("Recording funding for tournament ID:", id);
 
-    const results: { txHash: string; txId: string }[] = [];
-    for (const entry of entries) {
-      console.log("++Recording funding entry:", entry);
-      const tx = await recordFunding(contract, id, entry);
-      console.log("--Funding recorded, tx hash:", tx.public.txHash);
-      results.push({ txHash: tx.public.txHash, txId: tx.public.txId });
-    }
+    const results = await executeEntryBatch(entries, {
+      beforeLogPrefix: "++Recording funding entry:",
+      afterLogPrefix: "--Funding recorded, tx hash:",
+      execute: (entry) => recordFunding(contract, id, entry),
+    });
+
     return context.json({ ok: true, results });
   },
 );
@@ -158,7 +185,7 @@ app.openapi(
     console.log("Placements:", placements);
     const tx = await postResults(contract, id, placements);
     console.log("Results posted, tx hash:", tx.public.txHash);
-    return context.json({ txHash: tx.public.txHash, txId: tx.public.txId });
+    return context.json(toTxRef(tx));
   },
 );
 
@@ -186,13 +213,12 @@ app.openapi(
     const { entries } = context.req.valid("json");
     const contract = context.get("contract");
 
-    const results: { txHash: string; txId: string }[] = [];
-    for (const entry of entries) {
-      console.log("++Planning payout entry:", entry);
-      const tx = await planPayout(contract, id, entry);
-      console.log("--Payout planned, tx hash:", tx.public.txHash);
-      results.push({ txHash: tx.public.txHash, txId: tx.public.txId });
-    }
+    const results = await executeEntryBatch(entries, {
+      beforeLogPrefix: "++Planning payout entry:",
+      afterLogPrefix: "--Payout planned, tx hash:",
+      execute: (entry) => planPayout(contract, id, entry),
+    });
+
     return context.json({ ok: true, results });
   },
 );
@@ -220,10 +246,7 @@ app.openapi(
       "Tournament marked as payout ready, tx hash:",
       tx.public.txHash,
     );
-    return context.json({
-      txHash: tx.public.txHash,
-      txId: tx.public.txId,
-    });
+    return context.json(toTxRef(tx));
   },
 );
 
@@ -254,16 +277,12 @@ app.openapi(
 
     console.log("Recording receipts for tournament ID:", id);
 
-    const results: { txHash: string; txId: string }[] = [];
-    for (const entry of entries) {
-      console.log("++Recording receipt entry:", entry);
-      const tx = await recordReceipt(contract, id, entry);
-      console.log("--Receipt recorded, tx hash:", tx.public.txHash);
-      results.push({
-        txHash: tx.public.txHash,
-        txId: tx.public.txId,
-      });
-    }
+    const results = await executeEntryBatch(entries, {
+      beforeLogPrefix: "++Recording receipt entry:",
+      afterLogPrefix: "--Receipt recorded, tx hash:",
+      execute: (entry) => recordReceipt(contract, id, entry),
+    });
+
     return context.json({
       ok: true,
       results,
@@ -291,10 +310,7 @@ app.openapi(
     console.log("Completing tournament ID:", id);
     const tx = await completeTournament(contract, id);
     console.log("Tournament completed, tx hash:", tx.public.txHash);
-    return context.json({
-      txHash: tx.public.txHash,
-      txId: tx.public.txId,
-    });
+    return context.json(toTxRef(tx));
   },
 );
 
@@ -318,71 +334,109 @@ app.openapi(
     console.log("Cancelling tournament ID:", id);
     const tx = await cancelTournament(contract, id);
     console.log("Tournament cancelled, tx hash:", tx.public.txHash);
-    return context.json({
-      txHash: tx.public.txHash,
-      txId: tx.public.txId,
-    });
+    return context.json(toTxRef(tx));
   },
 );
 
-// Bonus Dust payouts
+// Dust reconcile planning
 app.openapi(
   createRoute({
     method: "post",
-    path: "/v1/tournament/{id}/bonus",
+    path: "/v1/dust/allocations/reconcile",
     request: {
-      params: TournamentIdParamSchema,
       body: {
-        content: { "application/json": { schema: DustBonusRequestSchema } },
+        content: { "application/json": { schema: DustReconcileRequestSchema } },
         required: true,
       },
     },
     responses: {
       200: {
-        description: "Accepted",
-        content: { "application/json": { schema: DustBonusResultsSchema } },
+        description: "OK",
+        content: {
+          "application/json": { schema: DustReconcileResponseSchema },
+        },
       },
     },
     security: [{ bearerAuth: [] }],
   }),
   async (context) => {
-    const { id } = context.req.valid("param");
-    const { players } = context.req.valid("json");
+    const payload = context.req.valid("json");
     const client = context.get("client");
 
-    const bonusDustAmount = 10n;
-
-    // Sync wallet state and get current balance
-    const balance = await getUnshieldedBalance(client.wallet, {
-      timeoutMs: 30_000,
-    });
-
-    // Check balances
-    const totalAmount = BigInt(players.length) * bonusDustAmount;
-
-    if (balance < totalAmount) {
-      throw new Error(
-        `Insufficient tDust balance (${balance}) to pay bonuses (${totalAmount})`,
-      );
-    }
-
-    const txs = [];
-    for (const player of players) {
-      console.log(
-        `Sending bonus tDust to player ${player.playerId} at address ${player.address}`,
-      );
-      const tx = await sendUnshieldedToken(
-        client.wallet,
-        player.address,
-        bonusDustAmount,
-      );
-
-      txs.push(tx);
-    }
+    const summary = await reconcileDustAllocations(
+      client.config,
+      payload.allocations.map((allocation) => ({
+        allocationId: allocation.allocationId,
+        dustAddress: allocation.dustAddress,
+        targetSpecks: BigInt(allocation.targetSpecks),
+        priority: allocation.priority,
+      })),
+      {
+        requestId: payload.requestId,
+        timeoutMs: payload.options?.timeoutMs,
+        mainReservePercent: BigInt(payload.mainReservePercent),
+        dryRun: payload.options?.dryRun,
+      },
+    );
 
     return context.json({
-      ok: true,
-      results: txs,
+      requestId: summary.requestId,
+      serviceDustAddress: summary.serviceDustAddress,
+      reservePercent: summary.reservePercent.toString(),
+      totalNight: summary.totalNight.toString(),
+      mainMinNight: summary.mainMinNight.toString(),
+      mainActualNight: summary.mainActualNight.toString(),
+      requestedSpecks: summary.requestedSpecks.toString(),
+      allocatedSpecks: summary.allocatedSpecks.toString(),
+      shortfallSpecks: summary.shortfallSpecks.toString(),
+      dryRun: summary.dryRun,
+      actions: summary.actions.map((action) => ({
+        allocationId: action.allocationId,
+        walletIndex: action.walletIndex,
+        op: action.op,
+        amountNight: action.amountNight?.toString(),
+        reason: action.reason,
+      })),
+      deallocated: summary.deallocated.map((entry) => ({
+        walletIndex: entry.walletIndex,
+        sweptNight: entry.sweptNight.toString(),
+      })),
+    });
+  },
+);
+
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/v1/dust/register",
+    request: {
+      body: {
+        content: { "application/json": { schema: DustRegisterRequestSchema } },
+        required: false,
+      },
+    },
+    responses: {
+      200: {
+        description: "OK",
+        content: { "application/json": { schema: DustRegisterResponseSchema } },
+      },
+    },
+    security: [{ bearerAuth: [] }],
+  }),
+  async (context) => {
+    const payload = context.req.valid("json");
+    const client = context.get("client");
+
+    const result = await registerAvailableDustCoins(client.wallet, {
+      dustReceiverAddress: payload?.dustReceiverAddress,
+      timeoutMs: payload?.timeoutMs,
+    });
+
+    if (!result) return context.json(null);
+
+    return context.json({
+      txId: result.txId,
+      registeredCoins: result.registeredCoins,
     });
   },
 );

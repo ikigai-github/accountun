@@ -9,7 +9,7 @@ import {
 import type {
   AccountKindType,
   CurrencyEntry,
-  DustAllocationRequest,
+  DustReconcileRequest,
 } from "@accountun/contract";
 import Papa from "papaparse";
 
@@ -101,24 +101,25 @@ export async function readCurrencyEntries(
 }
 
 type DustAllocationCsvRow = {
+  allocationId: string;
   dustAddress: string;
-  targetDust: bigint;
-  allocationId?: string;
+  targetSpecks: bigint;
+  priority?: number;
 };
 
 export async function readDustAllocationRequests(
   csvPath: string,
-): Promise<DustAllocationRequest[]> {
+): Promise<DustReconcileRequest[]> {
   const csvContent = await readFile(csvPath);
   const parseConfig = {
     header: true,
     skipEmptyLines: true,
     transform: (value: string, column: string) => {
       switch (column) {
-        case "targetDust":
+        case "targetSpecks":
           return BigInt(value);
-        case "allocationId":
-          return value.trim() === "" ? undefined : value;
+        case "priority":
+          return value.trim() === "" ? undefined : Number.parseInt(value, 10);
         default:
           return value;
       }
@@ -135,17 +136,21 @@ export async function readDustAllocationRequests(
   }
 
   return results.data.map((row, idx) => {
+    if (!row.allocationId || typeof row.allocationId !== "string") {
+      throw new Error(`Missing allocationId at CSV row ${idx + 2}`);
+    }
     if (!row.dustAddress || typeof row.dustAddress !== "string") {
       throw new Error(`Missing dustAddress at CSV row ${idx + 2}`);
     }
-    if (row.targetDust === undefined) {
-      throw new Error(`Missing targetDust at CSV row ${idx + 2}`);
+    if (row.targetSpecks === undefined) {
+      throw new Error(`Missing targetSpecks at CSV row ${idx + 2}`);
     }
 
     return {
-      dustAddress: row.dustAddress,
-      targetDust: row.targetDust,
       allocationId: row.allocationId,
+      dustAddress: row.dustAddress,
+      targetSpecks: row.targetSpecks,
+      priority: row.priority,
     };
   });
 }

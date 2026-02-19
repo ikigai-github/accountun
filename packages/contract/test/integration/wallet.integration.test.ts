@@ -7,6 +7,60 @@ import {
 } from "../../wallet";
 import { buildIntegrationConfig } from "./config";
 
+function hasWalletTransactingTag(error: unknown): boolean {
+  const seen = new Set<unknown>();
+
+  function visit(value: unknown, depth: number): boolean {
+    if (depth > 6 || value === null || typeof value !== "object") return false;
+    if (seen.has(value)) return false;
+    seen.add(value);
+
+    const tagged = value as {
+      _tag?: unknown;
+      cause?: unknown;
+      error?: unknown;
+    };
+    if (tagged._tag === "Wallet.Transacting") {
+      return true;
+    }
+
+    return (
+      visit(tagged.cause, depth + 1) ||
+      visit(tagged.error, depth + 1) ||
+      visit((value as { message?: unknown }).message, depth + 1)
+    );
+  }
+
+  return visit(error, 0);
+}
+
+async function rebalanceWithDustRetry(
+  wallet: Awaited<ReturnType<typeof buildWallet>>,
+  amounts: readonly bigint[],
+  label: string,
+  options?: { maxAttempts?: number; waitMs?: number },
+): Promise<void> {
+  const maxAttempts = options?.maxAttempts ?? 12;
+  const waitMs = options?.waitMs ?? 3_000;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      await rebalanceUnshieldedNightCoins(wallet, amounts);
+      return;
+    } catch (error) {
+      if (!hasWalletTransactingTag(error) || attempt === maxAttempts) {
+        throw error;
+      }
+
+      console.info(
+        `[integration] ${label} attempt ${attempt}/${maxAttempts} deferred: wallet transacting not ready; retrying in ${waitMs}ms`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+      await getWalletState(wallet, { timeoutMs: 120_000 });
+    }
+  }
+}
+
 async function waitForBalanceAtLeast(
   wallet: Awaited<ReturnType<typeof buildWallet>>,
   minBalance: bigint,
@@ -54,11 +108,11 @@ describe("wallet integration", () => {
       }
 
       console.info("[integration] splitting coins");
-      await rebalanceUnshieldedNightCoins(wallet, [
-        splitAmount,
-        splitAmount,
-        splitAmount,
-      ]);
+      await rebalanceWithDustRetry(
+        wallet,
+        [splitAmount, splitAmount, splitAmount],
+        "split",
+      );
 
       const afterSplit = await getWalletState(wallet, { timeoutMs: 120_000 });
       const afterSplitCount = afterSplit.unshielded.availableCoins.length;
@@ -71,7 +125,7 @@ describe("wallet integration", () => {
 
       console.info("[integration] merging coins");
       const mergeAmount = splitAmount * 3n;
-      await rebalanceUnshieldedNightCoins(wallet, [mergeAmount]);
+      await rebalanceWithDustRetry(wallet, [mergeAmount], "merge");
 
       const afterMerge = await getWalletState(wallet, { timeoutMs: 120_000 });
       const afterMergeCount = afterMerge.unshielded.availableCoins.length;

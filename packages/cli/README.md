@@ -60,11 +60,11 @@ The AUTH_SECRET_HEX, AUTH_REPLACEMENT_KEY_HEX, and SERVICE_WALLET_SEED_HEX need 
 
 The command `bun cli wallet` can help to setup. The command will try and restore a wallet from a state file if one is found. Otherwise it will use the afformentioned SERVICE_WALLET_SEED_HEX environment variable. Once the wallet is restored or built it will print the wallet address and current balance.
 
-### Allocating dust generation
+### Reconciling dust allocations
 
-Use `bun cli dust` to allocate dust generation for a set of addresses.
+Use `bun cli dust` to reconcile dust targets in Specks.
 
-If `--csv` is omitted, all eligible dust is allocated back to the service wallet dust address.
+If `--csv` is omitted, the command plans with no requested allocations.
 
 Example (allocate everything back to service dust address):
 
@@ -76,21 +76,24 @@ Example with allocation targets:
 
 ```sh
 bun cli dust \
-	--csv ./dust-allocations.csv
+	--csv ./dust-allocations.csv \
+	--main-reserve-percent 50 \
+	--request-id payout-cycle-2026-02-19
 ```
 
 `dust-allocations.csv` should include columns:
 
+- `allocationId` (required)
 - `dustAddress` (required)
-- `targetDust` (required)
-- `allocationId` (optional)
+- `targetSpecks` (required)
+- `priority` (optional)
 
 Example CSV:
 
 ```sh
-dustAddress,targetDust,allocationId
-<bech32m-dust-address-1>,1000000,player-1
-<bech32m-dust-address-2>,500000,player-2
+allocationId,dustAddress,targetSpecks,priority
+player-1,<bech32m-dust-address-1>,1000000,1
+player-2,<bech32m-dust-address-2>,500000,2
 ```
 
 

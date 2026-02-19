@@ -1,19 +1,15 @@
 import { Command } from "commander";
-import {
-  allocateDust,
-  getConfig,
-  withWallet,
-} from "@accountun/contract";
+import { reconcileDustAllocations, getConfig } from "@accountun/contract";
 import { readDustAllocationRequests } from "../utilities/csv";
 import path from "node:path";
 
 export function registerDustCommand(program: Command) {
   program
     .command("dust")
-    .description("Allocates dust to target dust addresses based on a CSV input")
+    .description("Reconciles dust allocations in Specks to target addresses")
     .option(
       "--csv <path>",
-      "CSV file with columns: dustAddress,targetDust,allocationId(optional)",
+      "CSV file with columns: allocationId,dustAddress,targetSpecks,priority(optional)",
     )
     .option(
       "--timeout-ms <ms>",
@@ -21,78 +17,75 @@ export function registerDustCommand(program: Command) {
       "180000",
     )
     .option(
-      "--tolerance-percent <percent>",
-      "target matching tolerance percentage",
-      "5",
+      "--main-reserve-percent <percent>",
+      "percentage of total NIGHT that must remain in main wallet",
+      "50",
     )
-    .option(
-      "--no-rebalance",
-      "disable rebalancing when existing coin set cannot satisfy targets",
-    )
+    .option("--request-id <id>", "idempotency key for reconciliation request")
+    .option("--execute", "execute on-chain actions (currently unavailable)")
     .action(
       async (options: {
         csv?: string;
         timeoutMs: string;
-        tolerancePercent: string;
-        rebalance: boolean;
+        mainReservePercent: string;
+        requestId?: string;
+        execute?: boolean;
       }) => {
         const requests = options.csv
           ? await readDustAllocationRequests(path.resolve(options.csv))
           : [];
 
         const timeoutMs = Number.parseInt(options.timeoutMs, 10);
-        const tolerancePercent = BigInt(options.tolerancePercent);
+        const mainReservePercent = BigInt(options.mainReservePercent);
         if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
           throw new Error("--timeout-ms must be a positive number");
         }
-        if (tolerancePercent < 0n) {
-          throw new Error("--tolerance-percent must be >= 0");
+        if (mainReservePercent < 0n || mainReservePercent > 100n) {
+          throw new Error("--main-reserve-percent must be between 0 and 100");
         }
 
         const config = getConfig();
-        await withWallet(config, async (wallet) => {
-          if (!options.csv) {
-            console.log(
-              "ℹ No --csv supplied; allocating all eligible dust back to the service dust address",
-            );
-          } else {
-            console.log("ℹ Allocating dust");
-          }
-          const summary = await allocateDust(wallet, requests, {
-            timeoutMs,
-            tolerancePercent,
-            allowRebalance: options.rebalance,
-          });
 
-          console.log("✅ Allocated dust");
-          console.log(" Service dust address:", summary.serviceDustAddress);
-          console.log(" Requested allocations:", summary.requestedCount);
-          console.log(
-            " Estimated total amount:",
-            summary.estimatedTotalAmount.toString(),
-          );
-          console.log(" Rebalance tx id:", summary.rebalanceTxId ?? "none");
-          console.log(
-            " Remainder registration tx id:",
-            summary.remainderRegistrationTxId ?? "none",
-          );
-          console.log(
-            " Remainder registered coins:",
-            summary.remainderRegisteredCoins,
-          );
-
-          for (const allocation of summary.allocations) {
-            console.log(" Allocation:");
-            console.log("  Dust address:", allocation.dustAddress);
-            console.log("  Target dust:", allocation.targetDust.toString());
-            console.log("  Target amount:", allocation.targetAmount.toString());
-            console.log("  Registration tx:", allocation.registrationTxId);
-            console.log(
-              "  Selected coin:",
-              `${allocation.selectedCoin.txId ?? "?"}:${allocation.selectedCoin.index ?? "?"} value=${allocation.selectedCoin.value.toString()}`,
-            );
-          }
+        console.log("ℹ Reconciling dust allocations");
+        const summary = await reconcileDustAllocations(config, requests, {
+          requestId: options.requestId,
+          timeoutMs,
+          mainReservePercent,
+          dryRun: !options.execute,
         });
+
+        console.log(
+          summary.dryRun
+            ? "✅ Reconcile plan created"
+            : "✅ Reconcile executed",
+        );
+        console.log(" Request id:", summary.requestId);
+        console.log(" Service dust address:", summary.serviceDustAddress);
+        console.log(" Reserve %:", summary.reservePercent.toString());
+        console.log(" Main min NIGHT:", summary.mainMinNight.toString());
+        console.log(" Main current NIGHT:", summary.mainActualNight.toString());
+        console.log(" Requested Specks:", summary.requestedSpecks.toString());
+        console.log(" Allocated Specks:", summary.allocatedSpecks.toString());
+        console.log(" Shortfall Specks:", summary.shortfallSpecks.toString());
+
+        for (const action of summary.actions) {
+          console.log(" Action:");
+          console.log("  Allocation:", action.allocationId);
+          console.log("  Wallet index:", action.walletIndex);
+          console.log("  Op:", action.op);
+          if (action.amountNight !== undefined) {
+            console.log("  Amount NIGHT:", action.amountNight.toString());
+          }
+          if (action.reason) {
+            console.log("  Reason:", action.reason);
+          }
+        }
+
+        for (const entry of summary.deallocated) {
+          console.log(" Deallocated:");
+          console.log("  Wallet index:", entry.walletIndex);
+          console.log("  Swept NIGHT:", entry.sweptNight.toString());
+        }
       },
     );
 }

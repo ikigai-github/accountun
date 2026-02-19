@@ -40,25 +40,73 @@ export const RegisterRequestSchema = z
   })
   .openapi("RegisterRequest");
 
-export const DustBonusPlayerSchema = z
+export const DustReconcileAllocationSchema = z
   .object({
-    playerId: z.uuid(),
-    address: z.string(),
+    allocationId: z.string(),
+    dustAddress: z.string(),
+    targetSpecks: U64String,
+    priority: z.number().int().optional(),
   })
-  .openapi("DustBonusPlayer");
+  .openapi("DustReconcileAllocation");
 
-export const DustBonusRequestSchema = z
+export const DustReconcileRequestSchema = z
   .object({
-    players: z.array(DustBonusPlayerSchema),
+    requestId: z.string(),
+    mainReservePercent: U64String,
+    allocations: z.array(DustReconcileAllocationSchema).default([]),
+    options: z
+      .object({
+        timeoutMs: z.number().int().positive().optional(),
+        dryRun: z.boolean().optional(),
+        rebalanceTolerancePercent: U64String.optional(),
+      })
+      .optional(),
   })
-  .openapi("DustBonusRequest");
+  .openapi("DustReconcileRequest");
 
-export const DustBonusResultsSchema = z
+export const DustReconcileActionSchema = z
   .object({
-    ok: z.boolean(),
-    results: z.array(z.string()),
+    allocationId: z.string(),
+    walletIndex: z.number().int(),
+    op: z.enum(["assign", "rebalance", "register", "sweep", "noop"]),
+    amountNight: U64String.optional(),
+    reason: z.string().optional(),
   })
-  .openapi("DustBonusResults");
+  .openapi("DustReconcileAction");
+
+export const DustReconcileResponseSchema = z
+  .object({
+    requestId: z.string(),
+    serviceDustAddress: z.string(),
+    reservePercent: U64String,
+    totalNight: U64String,
+    mainMinNight: U64String,
+    mainActualNight: U64String,
+    requestedSpecks: U64String,
+    allocatedSpecks: U64String,
+    shortfallSpecks: U64String,
+    dryRun: z.boolean(),
+    actions: z.array(DustReconcileActionSchema),
+    deallocated: z.array(
+      z.object({ walletIndex: z.number().int(), sweptNight: U64String }),
+    ),
+  })
+  .openapi("DustReconcileResponse");
+
+export const DustRegisterRequestSchema = z
+  .object({
+    dustReceiverAddress: z.string().optional(),
+    timeoutMs: z.number().int().positive().optional(),
+  })
+  .openapi("DustRegisterRequest");
+
+export const DustRegisterResponseSchema = z
+  .object({
+    txId: z.string(),
+    registeredCoins: z.number().int(),
+  })
+  .nullable()
+  .openapi("DustRegisterResponse");
 
 // Params
 export const TournamentIdParamSchema = z

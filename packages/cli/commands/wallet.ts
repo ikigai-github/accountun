@@ -23,7 +23,7 @@ export function registerWalletCommand(program: Command) {
         console.log("🌐 Network:", config.network);
         console.log(
           "🔑 Unshielded address:",
-          wallet.unshieldedKeystore.getBech32Address(),
+          wallet.unshieldedKeystore.getBech32Address().toString(),
         );
         console.log(
           "✨ Native token balance:",

@@ -5,6 +5,7 @@ import {
   registerCancelCommand,
   registerDeployCommand,
   registerDustCommand,
+  registerDustRegisterCommand,
   registerFundCommand,
   registerRegisterCommand,
   registerResultsCommand,
@@ -23,6 +24,7 @@ const program = new Command()
 registerDeployCommand(program);
 registerWalletCommand(program);
 registerDustCommand(program);
+registerDustRegisterCommand(program);
 registerRegisterCommand(program);
 registerFundCommand(program);
 registerCancelCommand(program);
