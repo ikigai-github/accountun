@@ -1,5 +1,6 @@
 export * from "./types";
 export * from "./wallet";
+export * from "./wallet-dust";
 export * from "./contract";
 export * from "./providers";
 export * from "./tournament";

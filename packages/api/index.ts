@@ -5,7 +5,8 @@ import { HTTPException } from "hono/http-exception";
 import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
 
 import {
-  reconcileDustAllocations,
+  reconcileDustAllocation,
+  planDustAllocations,
   registerTournament,
   recordFunding,
   postResults,
@@ -338,7 +339,7 @@ app.openapi(
   },
 );
 
-// Dust reconcile planning
+// Dust allocation planning
 app.openapi(
   createRoute({
     method: "post",
@@ -362,20 +363,28 @@ app.openapi(
   async (context) => {
     const payload = context.req.valid("json");
     const client = context.get("client");
+    const requests = payload.allocations.map((allocation) => ({
+      allocationId: allocation.allocationId,
+      dustAddress: allocation.dustAddress,
+      targetSpecks: BigInt(allocation.targetSpecks),
+      priority: allocation.priority,
+    }));
 
-    const summary = await reconcileDustAllocations(
+    const summary = await planDustAllocations(client.config, requests, {
+      requestId: payload.requestId,
+      timeoutMs: payload.options?.timeoutMs,
+      mainReservePercent: BigInt(payload.mainReservePercent),
+      refreshBalances: payload.options?.refreshBalances,
+      targetWindowMs: payload.options?.targetWindowMs,
+    });
+
+    const execution = await reconcileDustAllocation(
       client.config,
-      payload.allocations.map((allocation) => ({
-        allocationId: allocation.allocationId,
-        dustAddress: allocation.dustAddress,
-        targetSpecks: BigInt(allocation.targetSpecks),
-        priority: allocation.priority,
-      })),
+      summary.actions,
       {
-        requestId: payload.requestId,
+        requestId: `${summary.requestId}-execute`,
         timeoutMs: payload.options?.timeoutMs,
-        mainReservePercent: BigInt(payload.mainReservePercent),
-        dryRun: payload.options?.dryRun,
+        requests,
       },
     );
 
@@ -389,7 +398,6 @@ app.openapi(
       requestedSpecks: summary.requestedSpecks.toString(),
       allocatedSpecks: summary.allocatedSpecks.toString(),
       shortfallSpecks: summary.shortfallSpecks.toString(),
-      dryRun: summary.dryRun,
       actions: summary.actions.map((action) => ({
         allocationId: action.allocationId,
         walletIndex: action.walletIndex,
@@ -397,6 +405,10 @@ app.openapi(
         amountNight: action.amountNight?.toString(),
         reason: action.reason,
       })),
+      execution: {
+        requestId: execution.requestId,
+        results: execution.results,
+      },
       deallocated: summary.deallocated.map((entry) => ({
         walletIndex: entry.walletIndex,
         sweptNight: entry.sweptNight.toString(),

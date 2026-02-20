@@ -130,26 +130,18 @@ describe("wallet unit", () => {
     expect(passedCoins[0]?.utxo.txId).toBe("n1");
   });
 
-  it("estimateCoinAmountForDustTarget returns median required amount", async () => {
-    const wallet = mockWalletContext(() => ({
-      isSynced: true,
-      shielded: { balances: {} },
-      unshielded: {
-        balances: {},
-        availableCoins: [coin(50n, "a", 0), coin(80n, "b", 1), coin(90n, "c", 2)],
+  it("estimateCoinAmountForDustTarget returns required NIGHT from network params", async () => {
+    const result = await estimateCoinAmountForDustTarget(100n, {
+      targetWindowMs: 60 * 60 * 1000,
+      params: {
+        nightDustRatio: 10n,
+        timeToCapSeconds: 10n,
+        generationDecayRate: 0n,
+        dustGracePeriodSeconds: 0n,
       },
-      dust: {
-        dustAddress: "dust-unused",
-        estimateDustGeneration: () => [
-          { utxo: { value: 50n }, dust: { maxCap: 100n } },
-          { utxo: { value: 80n }, dust: { maxCap: 200n } },
-          { utxo: { value: 90n }, dust: { maxCap: 90n } },
-        ],
-      },
-    }));
+    });
 
-    const result = await estimateCoinAmountForDustTarget(wallet, 100n);
-    expect(result).toBe(50n);
+    expect(result).toBe(1n);
   });
 
   it("selectDustCoinsForAmount picks closest eligible coin", async () => {
@@ -158,7 +150,11 @@ describe("wallet unit", () => {
       shielded: { balances: {} },
       unshielded: {
         balances: {},
-        availableCoins: [coin(98n, "a", 0), coin(103n, "b", 1), coin(200n, "c", 2)],
+        availableCoins: [
+          coin(98n, "a", 0),
+          coin(103n, "b", 1),
+          coin(200n, "c", 2),
+        ],
       },
       dust: { dustAddress: "dust-unused", estimateDustGeneration: () => [] },
     }));
@@ -207,7 +203,9 @@ describe("wallet unit", () => {
       },
     );
 
-    const txId = await deregisterDustForCoins(wallet, [{ txId: "match", index: 4 }]);
+    const txId = await deregisterDustForCoins(wallet, [
+      { txId: "match", index: 4 },
+    ]);
 
     expect(txId).toBe("tx-123");
     expect(deregisteredCoins.length).toBe(1);

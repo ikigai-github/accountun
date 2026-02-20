@@ -60,11 +60,29 @@ The AUTH_SECRET_HEX, AUTH_REPLACEMENT_KEY_HEX, and SERVICE_WALLET_SEED_HEX need 
 
 The command `bun cli wallet` can help to setup. The command will try and restore a wallet from a state file if one is found. Otherwise it will use the afformentioned SERVICE_WALLET_SEED_HEX environment variable. Once the wallet is restored or built it will print the wallet address and current balance.
 
-### Reconciling dust allocations
+By default this checks account index `0` (main wallet). Use `--index` to inspect a sub-wallet derived from the same seed:
 
-Use `bun cli dust` to reconcile dust targets in Specks.
+```sh
+bun cli wallet --index 1
+```
 
-If `--csv` is omitted, the command plans with no requested allocations.
+To validate which DUST receiver address a Cardano reward address is currently registered to, pass `--reward-address`:
+
+```sh
+bun cli wallet --index 1 --reward-address stake_test1...
+```
+
+Note: the indexer status query is keyed by Cardano reward address (`stake...`), not by unshielded public key.
+
+### Planning and executing dust allocations
+
+Use `bun cli dust` to plan dust targets in Specks and immediately execute the resulting actions.
+
+If `--csv` is omitted, the command plans with no requested allocations, then executes no-op/sweep actions if present.
+
+Use `--refresh-balances` to force a chain read of all relevant wallet balances and refresh the local balance cache before planning.
+
+Use `--target-window-ms` to control how quickly each allocation should reach its `targetSpecks` estimate (default: 1 hour).
 
 Example (allocate everything back to service dust address):
 

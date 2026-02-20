@@ -31,6 +31,7 @@
     "test:integration:wallet": "NETWORK_MODE=local NETWORK=undeployed bun test ./packages/contract/test/integration/wallet.integration.test.ts --preload ./packages/contract/test/integration/setup.ts --timeout 1500000",
     "test:integration:tournament": "NETWORK_MODE=local NETWORK=undeployed bun test ./packages/contract/test/integration/tournament.integration.test.ts --preload ./packages/contract/test/integration/setup.ts --timeout 1500000",
     "fund:local": "bun ./scripts/fund-local.ts",
+    "profile:fees": "bun ./scripts/profile-fees.ts",
     "dust:register": "bun cli dust-register"
   }
 }

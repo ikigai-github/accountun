@@ -1,12 +1,16 @@
 import { Command } from "commander";
-import { reconcileDustAllocations, getConfig } from "@accountun/contract";
+import {
+  reconcileDustAllocation,
+  planDustAllocations,
+  getConfig,
+} from "@accountun/contract";
 import { readDustAllocationRequests } from "../utilities/csv";
 import path from "node:path";
 
 export function registerDustCommand(program: Command) {
   program
     .command("dust")
-    .description("Reconciles dust allocations in Specks to target addresses")
+    .description("Plans and executes dust allocations in Specks")
     .option(
       "--csv <path>",
       "CSV file with columns: allocationId,dustAddress,targetSpecks,priority(optional)",
@@ -21,24 +25,37 @@ export function registerDustCommand(program: Command) {
       "percentage of total NIGHT that must remain in main wallet",
       "50",
     )
+    .option(
+      "--refresh-balances",
+      "refresh wallet balances from chain into cache before planning",
+    )
+    .option(
+      "--target-window-ms <ms>",
+      "time window to hit targetSpecks (default: 1 hour)",
+      "3600000",
+    )
     .option("--request-id <id>", "idempotency key for reconciliation request")
-    .option("--execute", "execute on-chain actions (currently unavailable)")
     .action(
       async (options: {
         csv?: string;
         timeoutMs: string;
         mainReservePercent: string;
+        refreshBalances?: boolean;
+        targetWindowMs: string;
         requestId?: string;
-        execute?: boolean;
       }) => {
         const requests = options.csv
           ? await readDustAllocationRequests(path.resolve(options.csv))
           : [];
 
         const timeoutMs = Number.parseInt(options.timeoutMs, 10);
+        const targetWindowMs = Number.parseInt(options.targetWindowMs, 10);
         const mainReservePercent = BigInt(options.mainReservePercent);
         if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
           throw new Error("--timeout-ms must be a positive number");
+        }
+        if (!Number.isFinite(targetWindowMs) || targetWindowMs <= 0) {
+          throw new Error("--target-window-ms must be a positive number");
         }
         if (mainReservePercent < 0n || mainReservePercent > 100n) {
           throw new Error("--main-reserve-percent must be between 0 and 100");
@@ -46,19 +63,27 @@ export function registerDustCommand(program: Command) {
 
         const config = getConfig();
 
-        console.log("ℹ Reconciling dust allocations");
-        const summary = await reconcileDustAllocations(config, requests, {
+        console.log("ℹ Planning dust allocations");
+        const summary = await planDustAllocations(config, requests, {
           requestId: options.requestId,
           timeoutMs,
           mainReservePercent,
-          dryRun: !options.execute,
+          refreshBalances: options.refreshBalances,
+          targetWindowMs,
         });
 
-        console.log(
-          summary.dryRun
-            ? "✅ Reconcile plan created"
-            : "✅ Reconcile executed",
+        console.log("ℹ Executing dust allocation plan");
+        const execution = await reconcileDustAllocation(
+          config,
+          summary.actions,
+          {
+            requestId: `${summary.requestId}-execute`,
+            timeoutMs,
+            requests,
+          },
         );
+
+        console.log("✅ Allocation plan created");
         console.log(" Request id:", summary.requestId);
         console.log(" Service dust address:", summary.serviceDustAddress);
         console.log(" Reserve %:", summary.reservePercent.toString());
@@ -85,6 +110,22 @@ export function registerDustCommand(program: Command) {
           console.log(" Deallocated:");
           console.log("  Wallet index:", entry.walletIndex);
           console.log("  Swept NIGHT:", entry.sweptNight.toString());
+        }
+
+        console.log("✅ Allocation plan executed");
+        console.log(" Execute request id:", execution.requestId);
+        for (const result of execution.results) {
+          console.log(" Execution:");
+          console.log("  Allocation:", result.allocationId);
+          console.log("  Wallet index:", result.walletIndex);
+          console.log("  Op:", result.op);
+          console.log("  Status:", result.status);
+          if (result.txId) {
+            console.log("  TxId:", result.txId);
+          }
+          if (result.reason) {
+            console.log("  Reason:", result.reason);
+          }
         }
       },
     );

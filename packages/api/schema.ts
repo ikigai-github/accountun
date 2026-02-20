@@ -57,7 +57,8 @@ export const DustReconcileRequestSchema = z
     options: z
       .object({
         timeoutMs: z.number().int().positive().optional(),
-        dryRun: z.boolean().optional(),
+        refreshBalances: z.boolean().optional(),
+        targetWindowMs: z.number().int().positive().optional(),
         rebalanceTolerancePercent: U64String.optional(),
       })
       .optional(),
@@ -74,6 +75,17 @@ export const DustReconcileActionSchema = z
   })
   .openapi("DustReconcileAction");
 
+export const DustReconcileExecutionResultSchema = z
+  .object({
+    allocationId: z.string(),
+    walletIndex: z.number().int(),
+    op: z.enum(["assign", "rebalance", "register", "sweep", "noop"]),
+    status: z.enum(["executed", "skipped", "failed"]),
+    txId: z.string().optional(),
+    reason: z.string().optional(),
+  })
+  .openapi("DustReconcileExecutionResult");
+
 export const DustReconcileResponseSchema = z
   .object({
     requestId: z.string(),
@@ -85,8 +97,11 @@ export const DustReconcileResponseSchema = z
     requestedSpecks: U64String,
     allocatedSpecks: U64String,
     shortfallSpecks: U64String,
-    dryRun: z.boolean(),
     actions: z.array(DustReconcileActionSchema),
+    execution: z.object({
+      requestId: z.string(),
+      results: z.array(DustReconcileExecutionResultSchema),
+    }),
     deallocated: z.array(
       z.object({ walletIndex: z.number().int(), sweptNight: U64String }),
     ),
