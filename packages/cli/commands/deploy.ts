@@ -1,5 +1,11 @@
 import { Command } from "commander";
-import { deployContract, saveAddress, withClient } from "@accountun/contract";
+import {
+  buildWallet,
+  deployContract,
+  getWalletState,
+  saveAddress,
+  withClient,
+} from "@accountun/contract";
 
 export function registerDeployCommand(program: Command) {
   program

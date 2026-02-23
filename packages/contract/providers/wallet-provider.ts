@@ -3,7 +3,7 @@ import {
   type WalletProvider,
 } from "@midnight-ntwrk/midnight-js-types";
 import type { WalletContext } from "../types";
-import { getWalletStateUnsynced } from "../wallet";
+import { getWalletState, getWalletStateUnsynced } from "../wallet";
 import * as ledger from "@midnight-ntwrk/ledger-v7";
 
 /**
@@ -15,7 +15,7 @@ export async function createWalletProvider(
   wallet: WalletContext,
 ): Promise<WalletProvider & MidnightProvider> {
   // Don't wait for wallet to be fully synced because we just need the keys and ability to submit transactions
-  const state = await getWalletStateUnsynced(wallet);
+  const state = await getWalletState(wallet);
   return {
     getCoinPublicKey() {
       return state.shielded.coinPublicKey.toHexString();
