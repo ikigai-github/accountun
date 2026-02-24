@@ -74,7 +74,7 @@ export type DustNetworkParameters = {
   dustGracePeriodSeconds: bigint;
 };
 
-const DEFAULT_DUST_TARGET_WINDOW_MS = 60 * 60 * 1000;
+const DEFAULT_DUST_TARGET_WINDOW_MS = 24 * 60 * 60 * 1000;
 const DUST_BALANCE_CACHE_FILE = "dust/wallet-balances.json";
 
 function getBalanceCachePath(config: MidnightConfig): string {
@@ -285,7 +285,7 @@ export async function getDustNetworkParameters(
   }
 }
 
-export function estimateNightForDustTarget(
+export function estimateStarsForDustTarget(
   targetSpecks: bigint,
   targetWindowMs: number,
   params: DustNetworkParameters,
@@ -301,17 +301,17 @@ export function estimateNightForDustTarget(
   const effectiveWindowSeconds = BigInt(
     Math.max(1, Math.floor(targetWindowMs / 1000)),
   );
-  const grace = params.dustGracePeriodSeconds;
-  const activeSeconds =
-    effectiveWindowSeconds > grace ? effectiveWindowSeconds - grace : 1n;
-  const capSeconds =
-    params.timeToCapSeconds > 0n ? params.timeToCapSeconds : 1n;
+  const generatedSpecksPerStar =
+    params.generationDecayRate * effectiveWindowSeconds;
+  const effectiveSpecksPerStar =
+    generatedSpecksPerStar < params.nightDustRatio
+      ? generatedSpecksPerStar
+      : params.nightDustRatio;
 
-  const scaledCapPerNight =
-    (params.nightDustRatio * activeSeconds) / capSeconds;
-  const effectiveCapPerNight = scaledCapPerNight > 0n ? scaledCapPerNight : 1n;
-
-  return ceilDiv(targetSpecks, effectiveCapPerNight);
+  return ceilDiv(
+    targetSpecks,
+    effectiveSpecksPerStar > 0n ? effectiveSpecksPerStar : 1n,
+  );
 }
 
 export async function refreshDustWalletBalanceCache(
@@ -440,6 +440,10 @@ export async function planDustAllocations(
       allowFallback: true,
     });
 
+    console.log(
+      `Fetched dust network parameters: nightDustRatio=${dustParams.nightDustRatio.toString()} timeToCapSeconds=${dustParams.timeToCapSeconds.toString()} generationDecayRate=${dustParams.generationDecayRate.toString()} dustGracePeriodSeconds=${dustParams.dustGracePeriodSeconds.toString()}`,
+    );
+
     const serviceDustAddress =
       cachedBalanceState?.serviceDustAddress ??
       mainState?.dust.dustAddress ??
@@ -511,9 +515,9 @@ export async function planDustAllocations(
 
     const desiredWithEstimates = await Promise.all(
       normalized.map(async (req, i) => {
-        let targetNight = 0n;
+        let targetStars = 0n;
         if (req.targetSpecks > 0n) {
-          targetNight = estimateNightForDustTarget(
+          targetStars = estimateStarsForDustTarget(
             req.targetSpecks,
             targetWindowMs,
             dustParams,
@@ -523,8 +527,8 @@ export async function planDustAllocations(
         return {
           ...req,
           walletIndex: i + 1,
-          targetNight,
-          currentNight: balanceByWalletIndex.get(i + 1) ?? 0n,
+          targetStars,
+          currentStars: balanceByWalletIndex.get(i + 1) ?? 0n,
         };
       }),
     );
@@ -540,12 +544,15 @@ export async function planDustAllocations(
         continue;
       }
 
-      const deficit =
-        entry.currentNight >= entry.targetNight
+      const deficitStars =
+        entry.currentStars >= entry.targetStars
           ? 0n
-          : entry.targetNight - entry.currentNight;
+          : entry.targetStars - entry.currentStars;
 
-      if (deficit === 0n) {
+      console.log(
+        `Desired allocation ${entry.allocationId}: targetSpecks=${entry.targetSpecks.toString()} targetStars=${entry.targetStars.toString()} currentStars=${entry.currentStars.toString()} deficitStars=${deficitStars.toString()}`,
+      );
+      if (deficitStars === 0n) {
         actions.push({
           allocationId: entry.allocationId,
           walletIndex: entry.walletIndex,
@@ -558,6 +565,9 @@ export async function planDustAllocations(
       }
 
       if (availableBudget <= 0n) {
+        console.log(
+          `No available budget for allocation ${entry.allocationId}, walletIndex=${entry.walletIndex}`,
+        );
         actions.push({
           allocationId: entry.allocationId,
           walletIndex: entry.walletIndex,
@@ -568,19 +578,22 @@ export async function planDustAllocations(
         continue;
       }
 
-      const funding = deficit <= availableBudget ? deficit : availableBudget;
-      availableBudget -= funding;
+      const fundingStars =
+        deficitStars <= availableBudget ? deficitStars : availableBudget;
+      availableBudget -= fundingStars;
 
       actions.push({
         allocationId: entry.allocationId,
         walletIndex: entry.walletIndex,
-        op: entry.currentNight === 0n ? "assign" : "rebalance",
-        amountNight: funding,
+        op: entry.currentStars === 0n ? "assign" : "rebalance",
+        amountNight: fundingStars,
         reason:
-          funding < deficit ? "Partially funded due to reserve cap" : undefined,
+          fundingStars < deficitStars
+            ? "Partially funded due to reserve cap"
+            : undefined,
       });
 
-      if (funding === deficit) {
+      if (fundingStars === deficitStars) {
         allocatedSpecks += entry.targetSpecks;
       }
     }
@@ -973,5 +986,8 @@ export async function estimateCoinAmountForDustTarget(
         })
       : getDefaultDustNetworkParameters());
 
-  return estimateNightForDustTarget(targetSpecks, targetWindowMs, params);
+  console.log(
+    `Network Parameters: nightDustRatio=${params.nightDustRatio.toString()} timeToCapSeconds=${params.timeToCapSeconds.toString()} generationDecayRate=${params.generationDecayRate.toString()} dustGracePeriodSeconds=${params.dustGracePeriodSeconds.toString()}`,
+  );
+  return estimateStarsForDustTarget(targetSpecks, targetWindowMs, params);
 }

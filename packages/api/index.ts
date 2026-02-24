@@ -369,6 +369,10 @@ app.openapi(
       targetSpecks: BigInt(allocation.targetSpecks),
       priority: allocation.priority,
     }));
+    console.log(
+      `Reconciling dust allocations for request ID: ${payload.requestId} with ${requests.length} allocation(s)`,
+    );
+    console.log("Allocation requests:", requests);
 
     const summary = await planDustAllocations(client.config, requests, {
       requestId: payload.requestId,

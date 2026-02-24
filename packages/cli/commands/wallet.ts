@@ -17,6 +17,35 @@ type DustGenerationStatus = {
   maxCapacity: string;
 };
 
+const SPECKS_PER_DUST = 10n ** 15n;
+const STARS_PER_NIGHT = 10n ** 6n;
+
+function formatScaledAmount(
+  amount: bigint,
+  scale: bigint,
+  decimals: number,
+): string {
+  const whole = amount / scale;
+  const fraction = amount % scale;
+  if (fraction === 0n) {
+    return whole.toString();
+  }
+
+  const fractionText = fraction
+    .toString()
+    .padStart(decimals, "0")
+    .replace(/0+$/, "");
+  return `${whole.toString()}.${fractionText}`;
+}
+
+function formatSpecksAsDust(specks: bigint): string {
+  return formatScaledAmount(specks, SPECKS_PER_DUST, 15);
+}
+
+function formatStarsAsNight(stars: bigint): string {
+  return formatScaledAmount(stars, STARS_PER_NIGHT, 6);
+}
+
 async function fetchDustGenerationStatus(
   indexerHttpUri: string,
   rewardAddress: string,
@@ -101,15 +130,15 @@ export function registerWalletCommand(program: Command) {
         );
         console.log(
           "✨ Native token balance:",
-          await getUnshieldedBalance(wallet),
+          `${formatStarsAsNight(await getUnshieldedBalance(wallet))} NIGHT`,
         );
         console.log(
           "🛡️ Shielded token balance:",
-          await getShieldedBalance(wallet),
+          `${formatStarsAsNight(await getShieldedBalance(wallet))} NIGHT`,
         );
         console.log(
           "🪙 Dust balance:",
-          state.dust.walletBalance(new Date()).toString(),
+          formatSpecksAsDust(state.dust.walletBalance(new Date())),
         );
         console.log("🪙 Dust address:", state.dust.dustAddress);
 

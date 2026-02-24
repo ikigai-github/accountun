@@ -31,8 +31,8 @@ export function registerDustCommand(program: Command) {
     )
     .option(
       "--target-window-ms <ms>",
-      "time window to hit targetSpecks (default: 1 hour)",
-      "3600000",
+      "time window to hit targetSpecks (default: 1 day)",
+      "86400000",
     )
     .option("--request-id <id>", "idempotency key for reconciliation request")
     .action(

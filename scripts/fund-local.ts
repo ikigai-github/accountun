@@ -9,7 +9,7 @@ import {
 const GENESIS_WALLET_SEED_HEX =
   "0000000000000000000000000000000000000000000000000000000000000001";
 
-const AMOUNT = BigInt(process.env.FUND_AMOUNT ?? "100000000");
+const AMOUNT = BigInt(process.env.FUND_AMOUNT ?? "10000000000"); // 10000 NIGHT
 
 async function main() {
   const baseConfig = getConfig();
