@@ -34,6 +34,11 @@ export function registerDustCommand(program: Command) {
       "time window to hit targetSpecks (default: 1 day)",
       "86400000",
     )
+    .option(
+      "--target-peak-position <position>",
+      "where targetSpecks should be reached inside window: midpoint|end",
+      "midpoint",
+    )
     .option("--request-id <id>", "idempotency key for reconciliation request")
     .action(
       async (options: {
@@ -42,6 +47,7 @@ export function registerDustCommand(program: Command) {
         mainReservePercent: string;
         refreshBalances?: boolean;
         targetWindowMs: string;
+        targetPeakPosition: "midpoint" | "end";
         requestId?: string;
       }) => {
         const requests = options.csv
@@ -57,6 +63,12 @@ export function registerDustCommand(program: Command) {
         if (!Number.isFinite(targetWindowMs) || targetWindowMs <= 0) {
           throw new Error("--target-window-ms must be a positive number");
         }
+        if (
+          options.targetPeakPosition !== "midpoint" &&
+          options.targetPeakPosition !== "end"
+        ) {
+          throw new Error("--target-peak-position must be midpoint or end");
+        }
         if (mainReservePercent < 0n || mainReservePercent > 100n) {
           throw new Error("--main-reserve-percent must be between 0 and 100");
         }
@@ -70,6 +82,7 @@ export function registerDustCommand(program: Command) {
           mainReservePercent,
           refreshBalances: options.refreshBalances,
           targetWindowMs,
+          targetPeakPosition: options.targetPeakPosition,
         });
 
         console.log("ℹ Executing dust allocation plan");

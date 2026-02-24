@@ -27,6 +27,9 @@ const MIN_REQUIRED_BALANCE = 150_000_000n;
 const TRANSFER_AMOUNT = BigInt(
   process.env.PROFILE_TRANSFER_AMOUNT ?? "1000000",
 );
+const SPECKS_PER_DUST = 10n ** 15n;
+const STARS_PER_NIGHT = 10n ** 6n;
+const RUN_CONTRACT_FLOW = true;
 
 type FeeResult = {
   operation: string;
@@ -35,6 +38,13 @@ type FeeResult = {
   after: bigint;
   delta: bigint;
   valueSent: bigint;
+  dustBefore: bigint;
+  dustAfter: bigint;
+  dustDelta: bigint;
+  dustBeforeAtAnchor: bigint;
+  dustAfterAtAnchor: bigint;
+  dustDeltaAtAnchor: bigint;
+  dustEstimatedFee: bigint;
   estimatedFee: bigint;
 };
 
@@ -61,10 +71,17 @@ async function writeResultsCsv(
     "network",
     "operation",
     "txId",
-    "before",
-    "after",
-    "delta",
-    "valueSent",
+    "nightBefore",
+    "nightAfter",
+    "nightDelta",
+    "nightValueSent",
+    "dustBefore",
+    "dustAfter",
+    "dustDelta",
+    "dustBeforeAtAnchor",
+    "dustAfterAtAnchor",
+    "dustDeltaAtAnchor",
+    "dustEstimatedFee",
     "estimatedFee",
   ];
 
@@ -76,11 +93,18 @@ async function writeResultsCsv(
         config.network,
         row.operation,
         row.txId,
-        row.before.toString(),
-        row.after.toString(),
-        row.delta.toString(),
-        row.valueSent.toString(),
-        row.estimatedFee.toString(),
+        formatStarsAsNight(row.before),
+        formatStarsAsNight(row.after),
+        formatStarsAsNight(row.delta),
+        formatStarsAsNight(row.valueSent),
+        formatSpecksAsDust(row.dustBefore),
+        formatSpecksAsDust(row.dustAfter),
+        formatSpecksAsDust(row.dustDelta),
+        formatSpecksAsDust(row.dustBeforeAtAnchor),
+        formatSpecksAsDust(row.dustAfterAtAnchor),
+        formatSpecksAsDust(row.dustDeltaAtAnchor),
+        formatSpecksAsDust(row.dustEstimatedFee),
+        formatSpecksAsDust(row.estimatedFee),
       ]
         .map((cell) => csvEscape(cell))
         .join(","),
@@ -136,6 +160,59 @@ function extractTxId(value: unknown): string {
 
 function randomUuid(): string {
   return crypto.randomUUID();
+}
+
+function toNonNegative(value: bigint): bigint {
+  return value > 0n ? value : 0n;
+}
+
+function formatScaledAmount(
+  amount: bigint,
+  scale: bigint,
+  decimals: number,
+): string {
+  const isNegative = amount < 0n;
+  const normalizedAmount = isNegative ? -amount : amount;
+  const whole = normalizedAmount / scale;
+  const fraction = normalizedAmount % scale;
+  if (fraction === 0n) {
+    const text = whole.toString();
+    return isNegative ? `-${text}` : text;
+  }
+
+  const fractionText = fraction
+    .toString()
+    .padStart(decimals, "0")
+    .replace(/0+$/, "");
+  const text = `${whole.toString()}.${fractionText}`;
+  return isNegative ? `-${text}` : text;
+}
+
+function formatSpecksAsDust(specks: bigint): string {
+  return formatScaledAmount(specks, SPECKS_PER_DUST, 15);
+}
+
+function formatStarsAsNight(stars: bigint): string {
+  return formatScaledAmount(stars, STARS_PER_NIGHT, 6);
+}
+
+function computeFeeBreakdown(
+  before: bigint,
+  after: bigint,
+  dustDeltaAtAnchor: bigint,
+): {
+  delta: bigint;
+  dustEstimatedFee: bigint;
+  estimatedFee: bigint;
+} {
+  const delta = before - after;
+  const dustEstimatedFee = toNonNegative(dustDeltaAtAnchor);
+
+  return {
+    delta,
+    dustEstimatedFee,
+    estimatedFee: dustEstimatedFee,
+  };
 }
 
 async function waitForConfirmationBestEffort(
@@ -224,20 +301,37 @@ async function measureTx(
 
   console.info(`[profile-fees] starting ${operation}`);
 
+  const beforeState = await getWalletState(wallet, { timeoutMs });
   const before = await getUnshieldedBalance(wallet, { timeoutMs });
-  const baselineState = await getWalletState(wallet, { timeoutMs });
+  const beforeObservedAt = new Date();
+  const baselineState = beforeState;
 
   const txResult = await runTx();
   const txId = extractTxId(txResult);
 
   await waitForConfirmationBestEffort(wallet, baselineState, txId, timeoutMs);
 
+  const afterState = await getWalletState(wallet, { timeoutMs });
   const after = await getUnshieldedBalance(wallet, { timeoutMs });
-  const delta = before - after;
-  const estimatedFee = delta - valueSent;
+  const afterObservedAt = new Date();
+  const feeAnchorTime = afterObservedAt;
+
+  const dustBefore = beforeState.dust.walletBalance(beforeObservedAt);
+  const dustAfter = afterState.dust.walletBalance(afterObservedAt);
+  const dustDelta = dustBefore - dustAfter;
+
+  const dustBeforeAtAnchor = beforeState.dust.walletBalance(feeAnchorTime);
+  const dustAfterAtAnchor = afterState.dust.walletBalance(feeAnchorTime);
+  const dustDeltaAtAnchor = dustBeforeAtAnchor - dustAfterAtAnchor;
+
+  const { delta, dustEstimatedFee, estimatedFee } = computeFeeBreakdown(
+    before,
+    after,
+    dustDeltaAtAnchor,
+  );
 
   console.info(
-    `[profile-fees] completed ${operation} txId=${txId} fee=${estimatedFee.toString()}`,
+    `[profile-fees] completed ${operation} txId=${txId} fee=${formatSpecksAsDust(estimatedFee)} DUST (observedDelta=${formatSpecksAsDust(dustDelta)} DUST anchorDelta=${formatSpecksAsDust(dustDeltaAtAnchor)} DUST)`,
   );
 
   return {
@@ -247,6 +341,13 @@ async function measureTx(
     after,
     delta,
     valueSent,
+    dustBefore,
+    dustAfter,
+    dustDelta,
+    dustBeforeAtAnchor,
+    dustAfterAtAnchor,
+    dustDeltaAtAnchor,
+    dustEstimatedFee,
     estimatedFee,
   };
 }
@@ -258,10 +359,6 @@ async function main() {
   const csvPath =
     process.env.PROFILE_CSV_PATH?.trim() || getDefaultCsvPath(config.cacheDir);
 
-  console.info(
-    `[profile-fees] network=${config.network} node=${config.substrateNodeUri} indexer=${config.indexerHttpUri} proof=${config.proofServerUri}`,
-  );
-
   const wallet = await buildWallet(config);
   try {
     console.info("[profile-fees] wallet initialized");
@@ -272,161 +369,204 @@ async function main() {
       console.info("[profile-fees] service wallet funded");
     }
 
-    const providers = await createProviders(config, wallet);
-    const contract = createContract();
-    const privateState = {
-      secretKey: config.authSecret,
-      replacementKey: config.authReplacementKey ?? config.authSecret,
-    };
-
     const results: FeeResult[] = [];
+    // Set RUN_CONTRACT_FLOW to true when you want the full contract/deploy profiling sequence.
+    if (RUN_CONTRACT_FLOW) {
+      const providers = await createProviders(config, wallet);
+      const contract = createContract();
+      const privateState = {
+        secretKey: config.authSecret,
+        replacementKey: config.authReplacementKey ?? config.authSecret,
+      };
 
-    console.info("[profile-fees] starting deployContract");
-    const deployBefore = await getUnshieldedBalance(wallet, { timeoutMs });
-    const deployBaseline = await getWalletState(wallet, { timeoutMs });
-    const deployed = await deployContract(
-      privateState.secretKey,
-      contract,
-      providers,
-      privateState,
-    );
-    const deployedAddress = deployed.deployTxData.public.contractAddress;
-    await saveAddress(config.cacheDir, config.network, deployedAddress);
+      console.info("[profile-fees] starting deployContract");
+      const deployBeforeState = await getWalletState(wallet, { timeoutMs });
+      const deployBefore = await getUnshieldedBalance(wallet, { timeoutMs });
+      const deployBeforeObservedAt = new Date();
+      const deployBaseline = deployBeforeState;
+      const deployed = await deployContract(
+        privateState.secretKey,
+        contract,
+        providers,
+        privateState,
+      );
+      const deployedAddress = deployed.deployTxData.public.contractAddress;
+      await saveAddress(config.cacheDir, config.network, deployedAddress);
 
-    const deployTxId = extractTxId(deployed);
-    await waitForConfirmationBestEffort(
-      wallet,
-      deployBaseline,
-      deployTxId,
-      timeoutMs,
-    );
-    const deployAfter = await getUnshieldedBalance(wallet, { timeoutMs });
-    console.info(
-      `[profile-fees] completed deployContract txId=${deployTxId} fee=${(deployBefore - deployAfter).toString()}`,
-    );
-
-    results.push({
-      operation: "deployContract",
-      txId: deployTxId,
-      before: deployBefore,
-      after: deployAfter,
-      delta: deployBefore - deployAfter,
-      valueSent: 0n,
-      estimatedFee: deployBefore - deployAfter,
-    });
-
-    const tournamentId = randomUuid();
-    const fundingEntityId = randomUuid();
-    const playerOneId = randomUuid();
-    const playerTwoId = randomUuid();
-    const timestamp = Math.floor(Date.now() / 1000);
-
-    results.push(
-      await measureTx(
-        "registerTournament",
+      const deployTxId = extractTxId(deployed);
+      await waitForConfirmationBestEffort(
         wallet,
-        async () => registerTournament(deployed, tournamentId, "usd"),
-        { timeoutMs },
-      ),
-    );
+        deployBaseline,
+        deployTxId,
+        timeoutMs,
+      );
+      const deployAfterState = await getWalletState(wallet, { timeoutMs });
+      const deployAfter = await getUnshieldedBalance(wallet, { timeoutMs });
+      const deployAfterObservedAt = new Date();
+      const deployFeeAnchorTime = deployAfterObservedAt;
 
-    results.push(
-      await measureTx(
-        "recordFunding",
-        wallet,
-        async () =>
-          recordFunding(deployed, tournamentId, {
-            timestamp: String(timestamp),
-            entityId: fundingEntityId,
-            amount: "1000",
-          }),
-        { timeoutMs },
-      ),
-    );
+      const deployDustBefore = deployBeforeState.dust.walletBalance(
+        deployBeforeObservedAt,
+      );
+      const deployDustAfter = deployAfterState.dust.walletBalance(
+        deployAfterObservedAt,
+      );
+      const deployDustDelta = deployDustBefore - deployDustAfter;
 
-    results.push(
-      await measureTx(
-        "postResults",
-        wallet,
-        async () =>
-          postResults(deployed, tournamentId, [playerOneId, playerTwoId]),
-        { timeoutMs },
-      ),
-    );
+      const deployDustBeforeAtAnchor =
+        deployBeforeState.dust.walletBalance(deployFeeAnchorTime);
+      const deployDustAfterAtAnchor =
+        deployAfterState.dust.walletBalance(deployFeeAnchorTime);
+      const deployDustDeltaAtAnchor =
+        deployDustBeforeAtAnchor - deployDustAfterAtAnchor;
 
-    results.push(
-      await measureTx(
-        "planPayout#1",
-        wallet,
-        async () =>
-          planPayout(deployed, tournamentId, {
-            timestamp: String(timestamp + 1),
-            entityId: playerOneId,
-            amount: "600",
-          }),
-        { timeoutMs },
-      ),
-    );
+      const {
+        delta: deployDelta,
+        dustEstimatedFee: deployDustEstimatedFee,
+        estimatedFee: deployEstimatedFee,
+      } = computeFeeBreakdown(
+        deployBefore,
+        deployAfter,
+        deployDustDeltaAtAnchor,
+      );
+      console.info(
+        `[profile-fees] completed deployContract txId=${deployTxId} fee=${formatSpecksAsDust(deployEstimatedFee)} DUST (observedDelta=${formatSpecksAsDust(deployDustDelta)} DUST anchorDelta=${formatSpecksAsDust(deployDustDeltaAtAnchor)} DUST)`,
+      );
 
-    results.push(
-      await measureTx(
-        "planPayout#2",
-        wallet,
-        async () =>
-          planPayout(deployed, tournamentId, {
-            timestamp: String(timestamp + 1),
-            entityId: playerTwoId,
-            amount: "400",
-          }),
-        { timeoutMs },
-      ),
-    );
+      results.push({
+        operation: "deployContract",
+        txId: deployTxId,
+        before: deployBefore,
+        after: deployAfter,
+        delta: deployDelta,
+        valueSent: 0n,
+        dustBefore: deployDustBefore,
+        dustAfter: deployDustAfter,
+        dustDelta: deployDustDelta,
+        dustBeforeAtAnchor: deployDustBeforeAtAnchor,
+        dustAfterAtAnchor: deployDustAfterAtAnchor,
+        dustDeltaAtAnchor: deployDustDeltaAtAnchor,
+        dustEstimatedFee: deployDustEstimatedFee,
+        estimatedFee: deployEstimatedFee,
+      });
 
-    results.push(
-      await measureTx(
-        "payoutReady",
-        wallet,
-        async () => payoutReady(deployed, tournamentId),
-        { timeoutMs },
-      ),
-    );
+      const tournamentId = randomUuid();
+      const fundingEntityId = randomUuid();
+      const playerOneId = randomUuid();
+      const playerTwoId = randomUuid();
+      const timestamp = Math.floor(Date.now() / 1000);
 
-    results.push(
-      await measureTx(
-        "recordReceipt#1",
-        wallet,
-        async () =>
-          recordReceipt(deployed, tournamentId, {
-            timestamp: String(timestamp + 2),
-            entityId: playerOneId,
-            amount: "600",
-          }),
-        { timeoutMs },
-      ),
-    );
+      results.push(
+        await measureTx(
+          "registerTournament",
+          wallet,
+          async () => registerTournament(deployed, tournamentId, "usd"),
+          { timeoutMs },
+        ),
+      );
 
-    results.push(
-      await measureTx(
-        "recordReceipt#2",
-        wallet,
-        async () =>
-          recordReceipt(deployed, tournamentId, {
-            timestamp: String(timestamp + 2),
-            entityId: playerTwoId,
-            amount: "400",
-          }),
-        { timeoutMs },
-      ),
-    );
+      results.push(
+        await measureTx(
+          "recordFunding",
+          wallet,
+          async () =>
+            recordFunding(deployed, tournamentId, {
+              timestamp: String(timestamp),
+              entityId: fundingEntityId,
+              amount: "1000",
+            }),
+          { timeoutMs },
+        ),
+      );
 
-    results.push(
-      await measureTx(
-        "completeTournament",
-        wallet,
-        async () => completeTournament(deployed, tournamentId),
-        { timeoutMs },
-      ),
-    );
+      results.push(
+        await measureTx(
+          "postResults",
+          wallet,
+          async () =>
+            postResults(deployed, tournamentId, [playerOneId, playerTwoId]),
+          { timeoutMs },
+        ),
+      );
+
+      results.push(
+        await measureTx(
+          "planPayout#1",
+          wallet,
+          async () =>
+            planPayout(deployed, tournamentId, {
+              timestamp: String(timestamp + 1),
+              entityId: playerOneId,
+              amount: "600",
+            }),
+          { timeoutMs },
+        ),
+      );
+
+      results.push(
+        await measureTx(
+          "planPayout#2",
+          wallet,
+          async () =>
+            planPayout(deployed, tournamentId, {
+              timestamp: String(timestamp + 1),
+              entityId: playerTwoId,
+              amount: "400",
+            }),
+          { timeoutMs },
+        ),
+      );
+
+      results.push(
+        await measureTx(
+          "payoutReady",
+          wallet,
+          async () => payoutReady(deployed, tournamentId),
+          { timeoutMs },
+        ),
+      );
+
+      results.push(
+        await measureTx(
+          "recordReceipt#1",
+          wallet,
+          async () =>
+            recordReceipt(deployed, tournamentId, {
+              timestamp: String(timestamp + 2),
+              entityId: playerOneId,
+              amount: "600",
+            }),
+          { timeoutMs },
+        ),
+      );
+
+      results.push(
+        await measureTx(
+          "recordReceipt#2",
+          wallet,
+          async () =>
+            recordReceipt(deployed, tournamentId, {
+              timestamp: String(timestamp + 2),
+              entityId: playerTwoId,
+              amount: "400",
+            }),
+          { timeoutMs },
+        ),
+      );
+
+      results.push(
+        await measureTx(
+          "completeTournament",
+          wallet,
+          async () => completeTournament(deployed, tournamentId),
+          { timeoutMs },
+        ),
+      );
+    } else {
+      console.info(
+        "[profile-fees] full contract profiling disabled; running sendUnshieldedToken only",
+      );
+    }
 
     const receiverWallet = await buildWallet(config, { accountIndex: 1 });
     try {
@@ -450,17 +590,23 @@ async function main() {
     const table = results.map((row) => ({
       operation: row.operation,
       txId: row.txId,
-      before: row.before.toString(),
-      after: row.after.toString(),
-      delta: row.delta.toString(),
-      valueSent: row.valueSent.toString(),
-      estimatedFee: row.estimatedFee.toString(),
+      nightBefore: `${formatStarsAsNight(row.before)} NIGHT`,
+      nightAfter: `${formatStarsAsNight(row.after)} NIGHT`,
+      nightDelta: `${formatStarsAsNight(row.delta)} NIGHT`,
+      nightValueSent: `${formatStarsAsNight(row.valueSent)} NIGHT`,
+      dustBefore: `${formatSpecksAsDust(row.dustBefore)} DUST`,
+      dustAfter: `${formatSpecksAsDust(row.dustAfter)} DUST`,
+      dustDelta: `${formatSpecksAsDust(row.dustDelta)} DUST`,
+      dustBeforeAtAnchor: `${formatSpecksAsDust(row.dustBeforeAtAnchor)} DUST`,
+      dustAfterAtAnchor: `${formatSpecksAsDust(row.dustAfterAtAnchor)} DUST`,
+      dustDeltaAtAnchor: `${formatSpecksAsDust(row.dustDeltaAtAnchor)} DUST`,
+      dustEstimatedFee: `${formatSpecksAsDust(row.dustEstimatedFee)} DUST`,
+      estimatedFee: `${formatSpecksAsDust(row.estimatedFee)} DUST`,
     }));
 
     console.table(table);
     await writeResultsCsv(csvPath, config, runStartedAt, results);
     console.info(`[profile-fees] csv written: ${csvPath}`);
-    console.info("All values are in unshielded NIGHT smallest units (Specks).");
   } finally {
     await wallet.wallet.stop();
   }

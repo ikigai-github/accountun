@@ -380,6 +380,7 @@ app.openapi(
       mainReservePercent: BigInt(payload.mainReservePercent),
       refreshBalances: payload.options?.refreshBalances,
       targetWindowMs: payload.options?.targetWindowMs,
+      targetPeakPosition: payload.options?.targetPeakPosition,
     });
 
     const execution = await reconcileDustAllocation(

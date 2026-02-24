@@ -130,18 +130,35 @@ describe("wallet unit", () => {
     expect(passedCoins[0]?.utxo.txId).toBe("n1");
   });
 
-  it("estimateCoinAmountForDustTarget returns required NIGHT from network params", async () => {
+  it("estimateCoinAmountForDustTarget targets midpoint by default", async () => {
     const result = await estimateCoinAmountForDustTarget(100n, {
-      targetWindowMs: 60 * 60 * 1000,
+      targetWindowMs: 4_000,
       params: {
-        nightDustRatio: 10n,
-        timeToCapSeconds: 10n,
-        generationDecayRate: 0n,
+        nightDustRatio: 100n,
+        timeToCapSeconds: 50n,
+        generationDecayRate: 2n,
         dustGracePeriodSeconds: 0n,
       },
     });
 
-    expect(result).toBe(1n);
+    // midpoint of 4s window => 2s, so each star contributes 4 specks by target point
+    expect(result).toBe(25n);
+  });
+
+  it("estimateCoinAmountForDustTarget can target end of window", async () => {
+    const result = await estimateCoinAmountForDustTarget(100n, {
+      targetWindowMs: 4_000,
+      targetPeakPosition: "end",
+      params: {
+        nightDustRatio: 100n,
+        timeToCapSeconds: 50n,
+        generationDecayRate: 2n,
+        dustGracePeriodSeconds: 0n,
+      },
+    });
+
+    // end of 4s window => each star contributes 8 specks by target point
+    expect(result).toBe(13n);
   });
 
   it("selectDustCoinsForAmount picks closest eligible coin", async () => {

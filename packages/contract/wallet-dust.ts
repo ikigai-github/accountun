@@ -5,7 +5,6 @@ import * as ledger from "@midnight-ntwrk/ledger-v7";
 import path from "node:path";
 import {
   getWalletState,
-  type WalletState,
   waitForWalletSyncAdvance,
 } from "./wallet-sync";
 import { sendUnshieldedToken } from "./wallet-transfers";
@@ -68,13 +67,19 @@ export type DustPlanExecutionSummary = {
 };
 
 export type DustNetworkParameters = {
+  // Maximum dust balance (Specks) per unit of NIGHT generation capacity (Star)
   nightDustRatio: bigint;
+  // Derived: ceil(nightDustRatio / generationDecayRate)
   timeToCapSeconds: bigint;
+  // Specks generated per Star per second
   generationDecayRate: bigint;
   dustGracePeriodSeconds: bigint;
 };
 
+export type DustTargetPeakPosition = "midpoint" | "end";
+
 const DEFAULT_DUST_TARGET_WINDOW_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_DUST_TARGET_PEAK_POSITION: DustTargetPeakPosition = "midpoint";
 const DUST_BALANCE_CACHE_FILE = "dust/wallet-balances.json";
 
 function getBalanceCachePath(config: MidnightConfig): string {
@@ -84,6 +89,24 @@ function getBalanceCachePath(config: MidnightConfig): string {
 function ceilDiv(a: bigint, b: bigint): bigint {
   if (b === 0n) throw new Error("Division by zero");
   return (a + b - 1n) / b;
+}
+
+function deriveTimeToCapSeconds(
+  params: Pick<DustNetworkParameters, "nightDustRatio" | "generationDecayRate">,
+): bigint {
+  if (params.generationDecayRate <= 0n) return 0n;
+  return ceilDiv(params.nightDustRatio, params.generationDecayRate);
+}
+
+function resolveGenerationWindowSeconds(
+  targetWindowMs: number,
+  peakPosition: DustTargetPeakPosition,
+): bigint {
+  const windowSeconds = BigInt(Math.max(1, Math.floor(targetWindowMs / 1000)));
+  if (peakPosition === "end") {
+    return windowSeconds;
+  }
+  return ceilDiv(windowSeconds, 2n);
 }
 
 function parseCachedBigInt(value: string | undefined): bigint | undefined {
@@ -150,6 +173,18 @@ async function writeDustWalletBalanceCache(
   await writeFile(getBalanceCachePath(config), JSON.stringify(cache));
 }
 
+async function invalidateDustWalletBalanceCache(
+  config: MidnightConfig,
+  reason: string,
+): Promise<void> {
+  await writeDustWalletBalanceCache(config, {
+    updatedAt: new Date().toISOString(),
+    serviceDustAddress: undefined,
+    balances: {},
+  });
+  console.warn(`[dust:cache] invalidated wallet balance cache (${reason})`);
+}
+
 function normalizeReconcileRequests(
   requests: readonly DustReconcileRequest[],
 ): DustReconcileRequest[] {
@@ -184,11 +219,18 @@ function normalizeReconcileRequests(
       );
     }
 
+    const mergedPriority =
+      existing.priority === undefined
+        ? request.priority
+        : request.priority === undefined
+          ? existing.priority
+          : Math.min(existing.priority, request.priority);
+
     grouped.set(request.allocationId, {
       allocationId: request.allocationId,
       dustAddress: request.dustAddress,
       targetSpecks: existing.targetSpecks + request.targetSpecks,
-      priority: existing.priority ?? request.priority,
+      priority: mergedPriority,
     });
   }
 
@@ -203,12 +245,166 @@ function validateReservePercent(percent: bigint): void {
   }
 }
 
+type WalletBalanceSnapshot = { walletIndex: number; balanceNight: bigint };
+
+type PlannedAllocation = DustReconcileRequest & {
+  targetStars: bigint;
+};
+
+type WalletPlannedAllocation = PlannedAllocation & {
+  walletIndex: number;
+  currentStars: bigint;
+};
+
+function compareAllocationsByPriority(
+  a: Pick<DustReconcileRequest, "allocationId" | "priority">,
+  b: Pick<DustReconcileRequest, "allocationId" | "priority">,
+): number {
+  const aPriority = a.priority ?? Number.MAX_SAFE_INTEGER;
+  const bPriority = b.priority ?? Number.MAX_SAFE_INTEGER;
+  if (aPriority !== bPriority) return aPriority - bPriority;
+  return a.allocationId.localeCompare(b.allocationId);
+}
+
+function subtractWithFloor(a: bigint, b: bigint): bigint {
+  return a > b ? a - b : 0n;
+}
+
+function takeWalletByScore(
+  availableWallets: Map<number, bigint>,
+  scoreForBalance: (balanceNight: bigint) => bigint | undefined,
+  preferLowerScore: boolean,
+): WalletBalanceSnapshot | undefined {
+  let selectedWallet: WalletBalanceSnapshot | undefined;
+  let selectedScore: bigint | undefined;
+  for (const [walletIndex, balanceNight] of availableWallets) {
+    const score = scoreForBalance(balanceNight);
+    if (score === undefined) continue;
+
+    if (
+      !selectedWallet ||
+      selectedScore === undefined ||
+      (preferLowerScore ? score < selectedScore : score > selectedScore) ||
+      (score === selectedScore && walletIndex < selectedWallet.walletIndex)
+    ) {
+      selectedWallet = { walletIndex, balanceNight };
+      selectedScore = score;
+    }
+  }
+
+  if (!selectedWallet) return undefined;
+  availableWallets.delete(selectedWallet.walletIndex);
+  return selectedWallet;
+}
+
+function assignWalletsForAllocations(
+  allocations: readonly PlannedAllocation[],
+  snapshots: readonly WalletBalanceSnapshot[],
+): {
+  assigned: WalletPlannedAllocation[];
+  unassignedWallets: WalletBalanceSnapshot[];
+} {
+  const orderedAllocations = [...allocations].sort(compareAllocationsByPriority);
+  const availableWallets = new Map<number, bigint>(
+    snapshots.map((snapshot) => [snapshot.walletIndex, snapshot.balanceNight]),
+  );
+  const assignmentsById = new Map<string, WalletPlannedAllocation>();
+
+  for (const allocation of orderedAllocations) {
+    const fundedWallet = takeWalletByScore(
+      availableWallets,
+      (balanceNight) =>
+        balanceNight >= allocation.targetStars
+          ? balanceNight - allocation.targetStars
+          : undefined,
+      true,
+    );
+    if (!fundedWallet) continue;
+    assignmentsById.set(allocation.allocationId, {
+      ...allocation,
+      walletIndex: fundedWallet.walletIndex,
+      currentStars: fundedWallet.balanceNight,
+    });
+  }
+
+  for (const allocation of orderedAllocations) {
+    if (assignmentsById.has(allocation.allocationId)) continue;
+
+    const fallbackWallet = takeWalletByScore(
+      availableWallets,
+      (balanceNight) => balanceNight,
+      false,
+    );
+    if (!fallbackWallet) {
+      throw new Error("Unable to assign sub-wallets to all allocations");
+    }
+
+    assignmentsById.set(allocation.allocationId, {
+      ...allocation,
+      walletIndex: fallbackWallet.walletIndex,
+      currentStars: fallbackWallet.balanceNight,
+    });
+  }
+
+  return {
+    assigned: orderedAllocations.map((allocation) => {
+      const assigned = assignmentsById.get(allocation.allocationId);
+      if (!assigned) {
+        throw new Error(
+          `Missing wallet assignment for allocation '${allocation.allocationId}'`,
+        );
+      }
+      return assigned;
+    }),
+    unassignedWallets: [...availableWallets.entries()].map(
+      ([walletIndex, balanceNight]) => ({
+        walletIndex,
+        balanceNight,
+      }),
+    ),
+  };
+}
+
+async function loadSubWalletBalances(
+  config: MidnightConfig,
+  walletCount: number,
+  timeoutMs: number,
+  cachedBalanceState: DustWalletBalanceCacheState | null,
+): Promise<WalletBalanceSnapshot[]> {
+  const snapshots: WalletBalanceSnapshot[] = [];
+
+  for (let walletIndex = 1; walletIndex <= walletCount; walletIndex += 1) {
+    const cached = parseCachedBigInt(
+      cachedBalanceState?.balances?.[walletIndex.toString()],
+    );
+    if (cached !== undefined) {
+      snapshots.push({ walletIndex, balanceNight: cached });
+      continue;
+    }
+
+    const wallet = await buildWallet(config, { accountIndex: walletIndex });
+    try {
+      const balanceNight = await getUnshieldedBalance(wallet, { timeoutMs });
+      snapshots.push({ walletIndex, balanceNight });
+    } finally {
+      await wallet.wallet.stop();
+    }
+  }
+
+  return snapshots;
+}
+
 export function getDefaultDustNetworkParameters(): DustNetworkParameters {
   const dustParams = ledger.LedgerParameters.initialParameters().dust;
+  const nightDustRatio = dustParams.nightDustRatio;
+  const generationDecayRate = dustParams.generationDecayRate;
   return {
-    nightDustRatio: dustParams.nightDustRatio,
-    timeToCapSeconds: dustParams.timeToCapSeconds,
-    generationDecayRate: dustParams.generationDecayRate,
+    nightDustRatio,
+    timeToCapSeconds: deriveTimeToCapSeconds({
+      nightDustRatio,
+      generationDecayRate,
+    }),
+    generationDecayRate,
     dustGracePeriodSeconds: dustParams.dustGracePeriodSeconds,
   };
 }
@@ -256,10 +452,15 @@ export async function getLiveDustNetworkParameters(
   }
 
   const params = ledger.LedgerParameters.deserialize(hexToBytes(encoded));
+  const nightDustRatio = params.dust.nightDustRatio;
+  const generationDecayRate = params.dust.generationDecayRate;
   return {
-    nightDustRatio: params.dust.nightDustRatio,
-    timeToCapSeconds: params.dust.timeToCapSeconds,
-    generationDecayRate: params.dust.generationDecayRate,
+    nightDustRatio,
+    timeToCapSeconds: deriveTimeToCapSeconds({
+      nightDustRatio,
+      generationDecayRate,
+    }),
+    generationDecayRate,
     dustGracePeriodSeconds: params.dust.dustGracePeriodSeconds,
   };
 }
@@ -289,6 +490,9 @@ export function estimateStarsForDustTarget(
   targetSpecks: bigint,
   targetWindowMs: number,
   params: DustNetworkParameters,
+  options?: {
+    peakPosition?: DustTargetPeakPosition;
+  },
 ): bigint {
   if (targetSpecks <= 0n) {
     throw new Error("Target Specks must be positive");
@@ -298,20 +502,26 @@ export function estimateStarsForDustTarget(
     throw new Error("targetWindowMs must be a positive number");
   }
 
-  const effectiveWindowSeconds = BigInt(
-    Math.max(1, Math.floor(targetWindowMs / 1000)),
+  const peakPosition =
+    options?.peakPosition ?? DEFAULT_DUST_TARGET_PEAK_POSITION;
+  const generationWindowSeconds = resolveGenerationWindowSeconds(
+    targetWindowMs,
+    peakPosition,
   );
-  const generatedSpecksPerStar =
-    params.generationDecayRate * effectiveWindowSeconds;
-  const effectiveSpecksPerStar =
-    generatedSpecksPerStar < params.nightDustRatio
-      ? generatedSpecksPerStar
+  const uncappedSpecksPerStarAtTarget =
+    params.generationDecayRate * generationWindowSeconds;
+  const specksPerStarAtTarget =
+    uncappedSpecksPerStarAtTarget < params.nightDustRatio
+      ? uncappedSpecksPerStarAtTarget
       : params.nightDustRatio;
 
-  return ceilDiv(
-    targetSpecks,
-    effectiveSpecksPerStar > 0n ? effectiveSpecksPerStar : 1n,
-  );
+  if (specksPerStarAtTarget <= 0n) {
+    throw new Error(
+      "Dust generation rate/cap must be positive to estimate required NIGHT",
+    );
+  }
+
+  return ceilDiv(targetSpecks, specksPerStarAtTarget);
 }
 
 export async function refreshDustWalletBalanceCache(
@@ -381,6 +591,7 @@ export async function planDustAllocations(
     mainReservePercent?: bigint;
     refreshBalances?: boolean;
     targetWindowMs?: number;
+    targetPeakPosition?: DustTargetPeakPosition;
   },
 ): Promise<DustReconcileSummary> {
   const normalized = normalizeReconcileRequests(requests);
@@ -388,6 +599,8 @@ export async function planDustAllocations(
   const reservePercent = options?.mainReservePercent ?? 50n;
   const targetWindowMs =
     options?.targetWindowMs ?? DEFAULT_DUST_TARGET_WINDOW_MS;
+  const targetPeakPosition =
+    options?.targetPeakPosition ?? DEFAULT_DUST_TARGET_PEAK_POSITION;
   const requestId =
     options?.requestId ??
     `plan-${Date.now().toString(10)}-${Math.floor(Math.random() * 1_000_000).toString(10)}`;
@@ -397,17 +610,6 @@ export async function planDustAllocations(
     throw new Error("targetWindowMs must be a positive number");
   }
 
-  console.info(
-    `[dust:plan] requestId=${requestId} normalizedAllocations=${normalized.length} reservePercent=${reservePercent.toString()} targetWindowMs=${targetWindowMs}`,
-  );
-  if (normalized.length > 0) {
-    console.info("[dust:plan] normalized allocations:");
-    for (const allocation of normalized) {
-      console.info(
-        `  - id=${allocation.allocationId} targetSpecks=${allocation.targetSpecks.toString()} dustAddress=${allocation.dustAddress} priority=${allocation.priority ?? ""}`,
-      );
-    }
-  }
   let cachedBalanceState = await readDustWalletBalanceCache(config);
   const requiredWalletCount = normalized.length;
   let scannedWalletCount = Math.max(
@@ -429,25 +631,16 @@ export async function planDustAllocations(
 
   const mainWallet = await buildWallet(config, { accountIndex: 0 });
   try {
-    let mainState: WalletState | undefined;
-
-    if (!cachedBalanceState?.serviceDustAddress) {
-      mainState = await getWalletState(mainWallet, { timeoutMs });
-    }
-
     const dustParams = await getDustNetworkParameters(config, {
       timeoutMs,
       allowFallback: true,
     });
-
-    console.log(
-      `Fetched dust network parameters: nightDustRatio=${dustParams.nightDustRatio.toString()} timeToCapSeconds=${dustParams.timeToCapSeconds.toString()} generationDecayRate=${dustParams.generationDecayRate.toString()} dustGracePeriodSeconds=${dustParams.dustGracePeriodSeconds.toString()}`,
-    );
+    const mainState = cachedBalanceState?.serviceDustAddress
+      ? undefined
+      : await getWalletState(mainWallet, { timeoutMs });
 
     const serviceDustAddress =
-      cachedBalanceState?.serviceDustAddress ??
-      mainState?.dust.dustAddress ??
-      "";
+      cachedBalanceState?.serviceDustAddress ?? mainState?.dust.dustAddress;
     if (!serviceDustAddress) {
       throw new Error("Unable to resolve service dust address for planning");
     }
@@ -459,81 +652,64 @@ export async function planDustAllocations(
       cachedMainBalance ??
       (await getUnshieldedBalance(mainWallet, { timeoutMs }));
 
-    const snapshots: Array<{ walletIndex: number; balanceNight: bigint }> = [];
-    for (let i = 0; i < scannedWalletCount; i += 1) {
-      const walletIndex = i + 1;
-      const cached = parseCachedBigInt(
-        cachedBalanceState?.balances?.[walletIndex.toString()],
-      );
-      if (cached !== undefined) {
-        snapshots.push({ walletIndex, balanceNight: cached });
-        continue;
-      }
-
-      const wallet = await buildWallet(config, { accountIndex: walletIndex });
-      try {
-        const balanceNight = await getUnshieldedBalance(wallet, { timeoutMs });
-        snapshots.push({ walletIndex, balanceNight });
-      } finally {
-        await wallet.wallet.stop();
-      }
-    }
-
-    const balanceByWalletIndex = new Map<number, bigint>(
-      snapshots.map((snapshot) => [
-        snapshot.walletIndex,
-        snapshot.balanceNight,
-      ]),
+    const snapshots = await loadSubWalletBalances(
+      config,
+      scannedWalletCount,
+      timeoutMs,
+      cachedBalanceState,
     );
 
     const subTotal = snapshots.reduce((sum, s) => sum + s.balanceNight, 0n);
     const totalNight = mainBalance + subTotal;
     const mainMinNight = (totalNight * reservePercent) / 100n;
-    const spendableFromMain =
-      mainBalance > mainMinNight ? mainBalance - mainMinNight : 0n;
-
-    console.info(
-      `[dust:plan] wallet balances: main(index=0)=${mainBalance.toString()} subWalletTotal=${subTotal.toString()} totalNight=${totalNight.toString()} mainMinNight=${mainMinNight.toString()} spendableFromMain=${spendableFromMain.toString()}`,
-    );
-    if (snapshots.length > 0) {
-      console.info("[dust:plan] sub-wallet balances:");
-      for (const snapshot of snapshots) {
-        console.info(
-          `  - walletIndex=${snapshot.walletIndex} balanceNight=${snapshot.balanceNight.toString()}`,
-        );
-      }
-    }
-
     const requestedSpecks = normalized.reduce(
       (sum, req) => sum + req.targetSpecks,
       0n,
     );
+    const requestedAllocations: PlannedAllocation[] = normalized.map((request) => ({
+      ...request,
+      targetStars:
+        request.targetSpecks > 0n
+          ? estimateStarsForDustTarget(
+              request.targetSpecks,
+              targetWindowMs,
+              dustParams,
+              { peakPosition: targetPeakPosition },
+            )
+          : 0n,
+    }));
+
+    const { assigned, unassignedWallets } = assignWalletsForAllocations(
+      requestedAllocations,
+      snapshots,
+    );
+    const sweepCandidates = unassignedWallets.filter(
+      (wallet) => wallet.balanceNight > 0n,
+    );
+    const deallocated = sweepCandidates.map((wallet) => ({
+      walletIndex: wallet.walletIndex,
+      sweptNight: wallet.balanceNight,
+    }));
 
     let allocatedSpecks = 0n;
-    const actions: DustReconcileAction[] = [];
-    let availableBudget = spendableFromMain;
+    const actions: DustReconcileAction[] = sweepCandidates.map((wallet) => ({
+      allocationId: `sweep-${wallet.walletIndex}`,
+      walletIndex: wallet.walletIndex,
+      op: "sweep",
+      amountNight: wallet.balanceNight,
+      reason: "Unassigned funded sub-wallet reclaimed to main wallet",
+    }));
 
-    const desiredWithEstimates = await Promise.all(
-      normalized.map(async (req, i) => {
-        let targetStars = 0n;
-        if (req.targetSpecks > 0n) {
-          targetStars = estimateStarsForDustTarget(
-            req.targetSpecks,
-            targetWindowMs,
-            dustParams,
-          );
-        }
-
-        return {
-          ...req,
-          walletIndex: i + 1,
-          targetStars,
-          currentStars: balanceByWalletIndex.get(i + 1) ?? 0n,
-        };
-      }),
+    const reclaimableNight = sweepCandidates.reduce(
+      (sum, wallet) => sum + wallet.balanceNight,
+      0n,
+    );
+    let availableBudget = subtractWithFloor(
+      mainBalance + reclaimableNight,
+      mainMinNight,
     );
 
-    for (const entry of desiredWithEstimates) {
+    for (const entry of assigned) {
       if (entry.targetSpecks === 0n) {
         actions.push({
           allocationId: entry.allocationId,
@@ -544,30 +720,27 @@ export async function planDustAllocations(
         continue;
       }
 
-      const deficitStars =
-        entry.currentStars >= entry.targetStars
+      const deficitStars = subtractWithFloor(entry.targetStars, entry.currentStars);
+      const fundedNight =
+        deficitStars === 0n
           ? 0n
-          : entry.targetStars - entry.currentStars;
+          : deficitStars <= availableBudget
+            ? deficitStars
+            : availableBudget;
 
-      console.log(
-        `Desired allocation ${entry.allocationId}: targetSpecks=${entry.targetSpecks.toString()} targetStars=${entry.targetStars.toString()} currentStars=${entry.currentStars.toString()} deficitStars=${deficitStars.toString()}`,
-      );
-      if (deficitStars === 0n) {
+      if (fundedNight > 0n) {
+        availableBudget -= fundedNight;
         actions.push({
           allocationId: entry.allocationId,
           walletIndex: entry.walletIndex,
-          op: "register",
+          op: entry.currentStars === 0n ? "assign" : "rebalance",
+          amountNight: fundedNight,
           reason:
-            "Wallet already funded; delegation/registration check required",
+            fundedNight < deficitStars
+              ? "Partially funded due to reserve floor"
+              : undefined,
         });
-        allocatedSpecks += entry.targetSpecks;
-        continue;
-      }
-
-      if (availableBudget <= 0n) {
-        console.log(
-          `No available budget for allocation ${entry.allocationId}, walletIndex=${entry.walletIndex}`,
-        );
+      } else if (deficitStars > 0n) {
         actions.push({
           allocationId: entry.allocationId,
           walletIndex: entry.walletIndex,
@@ -575,74 +748,24 @@ export async function planDustAllocations(
           amountNight: 0n,
           reason: "Main wallet reserve floor reached",
         });
-        continue;
       }
 
-      const fundingStars =
-        deficitStars <= availableBudget ? deficitStars : availableBudget;
-      availableBudget -= fundingStars;
+      const resolvedStars = entry.currentStars + fundedNight;
+      if (resolvedStars > 0n) {
+        actions.push({
+          allocationId: entry.allocationId,
+          walletIndex: entry.walletIndex,
+          op: "register",
+          reason: "Ensure wallet coins are registered to allocation receiver",
+        });
+      }
 
-      actions.push({
-        allocationId: entry.allocationId,
-        walletIndex: entry.walletIndex,
-        op: entry.currentStars === 0n ? "assign" : "rebalance",
-        amountNight: fundingStars,
-        reason:
-          fundingStars < deficitStars
-            ? "Partially funded due to reserve cap"
-            : undefined,
-      });
-
-      if (fundingStars === deficitStars) {
+      if (deficitStars === 0n || fundedNight === deficitStars) {
         allocatedSpecks += entry.targetSpecks;
       }
     }
 
-    const deallocated: Array<{ walletIndex: number; sweptNight: bigint }> = [];
-    for (const snapshot of snapshots) {
-      if (
-        snapshot.walletIndex <= requiredWalletCount ||
-        snapshot.balanceNight <= 0n
-      ) {
-        continue;
-      }
-
-      actions.push({
-        allocationId: `sweep-${snapshot.walletIndex}`,
-        walletIndex: snapshot.walletIndex,
-        op: "sweep",
-        amountNight: snapshot.balanceNight,
-        reason: "Wallet index no longer requested; candidate sweep to main",
-      });
-
-      deallocated.push({
-        walletIndex: snapshot.walletIndex,
-        sweptNight: snapshot.balanceNight,
-      });
-    }
-
     const shortfallSpecks = requestedSpecks - allocatedSpecks;
-
-    const changedWalletActions = actions.filter(
-      (action) =>
-        (action.op === "assign" ||
-          action.op === "rebalance" ||
-          action.op === "sweep") &&
-        action.amountNight !== undefined &&
-        action.amountNight > 0n,
-    );
-
-    if (changedWalletActions.length > 0) {
-      console.info("[dust:plan] planned wallet balance changes:");
-      for (const action of changedWalletActions) {
-        console.info(
-          `  - allocationId=${action.allocationId} walletIndex=${action.walletIndex} op=${action.op} amountNight=${action.amountNight?.toString()}${action.reason ? ` reason=${action.reason}` : ""}`,
-        );
-      }
-    } else {
-      console.info("[dust:plan] planned wallet balance changes: none");
-    }
-
     const cacheBalances: Record<string, string> = {
       "0": mainBalance.toString(),
       ...Object.fromEntries(
@@ -753,59 +876,157 @@ export async function reconcileDustAllocation(
   };
 
   try {
-    const mainAddress = mainWallet.unshieldedKeystore
-      .getBech32Address()
-      .toString();
+    try {
+      const mainAddress = mainWallet.unshieldedKeystore
+        .getBech32Address()
+        .toString();
+      const transferBetweenWallets = async (
+        sourceWallet: WalletContext,
+        targetWallet: WalletContext,
+        receiverAddress: string,
+        amountNight: bigint,
+      ): Promise<string> => {
+        const [sourceBaseline, targetBaseline] = await Promise.all([
+          getWalletState(sourceWallet, { timeoutMs }),
+          getWalletState(targetWallet, { timeoutMs }),
+        ]);
 
-    for (const action of orderedActions) {
-      try {
-        if (action.op === "noop") {
-          results.push({
-            allocationId: action.allocationId,
-            walletIndex: action.walletIndex,
-            op: action.op,
-            status: "skipped",
-            reason: action.reason ?? "No action required",
-          });
-          continue;
-        }
+        const txId = await sendUnshieldedToken(
+          sourceWallet,
+          receiverAddress,
+          amountNight,
+        );
 
-        if (
-          (action.op === "assign" ||
-            action.op === "rebalance" ||
-            action.op === "sweep") &&
-          (action.amountNight === undefined || action.amountNight <= 0n)
-        ) {
-          results.push({
-            allocationId: action.allocationId,
-            walletIndex: action.walletIndex,
-            op: action.op,
-            status: "skipped",
-            reason: action.reason ?? "Amount was zero",
-          });
-          continue;
-        }
+        await waitForWalletSyncAdvance(sourceWallet, {
+          baselineState: sourceBaseline,
+          timeoutMs,
+          txId,
+        });
+        await waitForWalletSyncAdvance(targetWallet, {
+          baselineState: targetBaseline,
+          timeoutMs,
+          txId,
+        });
 
-        if (action.op === "register") {
-          const targetWallet = await getWallet(action.walletIndex);
-          const dustReceiverAddress = dustAddressByAllocationId.get(
-            action.allocationId,
-          );
+        return txId;
+      };
 
-          const registration = await registerAvailableDustCoins(targetWallet, {
-            dustReceiverAddress,
-            timeoutMs,
-            awaitConfirmation: true,
-          });
-
-          if (!registration) {
+      for (const action of orderedActions) {
+        try {
+          if (action.op === "noop") {
             results.push({
               allocationId: action.allocationId,
               walletIndex: action.walletIndex,
               op: action.op,
               status: "skipped",
-              reason: "No eligible NIGHT coins to register",
+              reason: action.reason ?? "No action required",
             });
+            continue;
+          }
+
+          if (
+            (action.op === "assign" ||
+              action.op === "rebalance" ||
+              action.op === "sweep") &&
+            (action.amountNight === undefined || action.amountNight <= 0n)
+          ) {
+            results.push({
+              allocationId: action.allocationId,
+              walletIndex: action.walletIndex,
+              op: action.op,
+              status: "skipped",
+              reason: action.reason ?? "Amount was zero",
+            });
+            continue;
+          }
+
+          if (action.op === "register") {
+            const targetWallet = await getWallet(action.walletIndex);
+            const dustReceiverAddress = dustAddressByAllocationId.get(
+              action.allocationId,
+            );
+
+            const registration = await registerAvailableDustCoins(targetWallet, {
+              dustReceiverAddress,
+              timeoutMs,
+              awaitConfirmation: true,
+            });
+
+            if (!registration) {
+              results.push({
+                allocationId: action.allocationId,
+                walletIndex: action.walletIndex,
+                op: action.op,
+                status: "skipped",
+                reason: "No eligible NIGHT coins to register",
+              });
+              continue;
+            }
+
+            results.push({
+              allocationId: action.allocationId,
+              walletIndex: action.walletIndex,
+              op: action.op,
+              status: "executed",
+              txId: registration.txId,
+            });
+            continue;
+          }
+
+          if (action.op === "assign" || action.op === "rebalance") {
+            const targetWallet = await getWallet(action.walletIndex);
+            const receiverAddress = targetWallet.unshieldedKeystore
+              .getBech32Address()
+              .toString();
+            const txId = await transferBetweenWallets(
+              mainWallet,
+              targetWallet,
+              receiverAddress,
+              action.amountNight!,
+            );
+
+            results.push({
+              allocationId: action.allocationId,
+              walletIndex: action.walletIndex,
+              op: action.op,
+              status: "executed",
+              txId,
+            });
+            cacheBalances.set(
+              action.walletIndex,
+              (cacheBalances.get(action.walletIndex) ?? 0n) + action.amountNight!,
+            );
+            cacheBalances.set(
+              0,
+              (cacheBalances.get(0) ?? 0n) - action.amountNight!,
+            );
+            continue;
+          }
+
+          if (action.op === "sweep") {
+            const sourceWallet = await getWallet(action.walletIndex);
+            const txId = await transferBetweenWallets(
+              sourceWallet,
+              mainWallet,
+              mainAddress,
+              action.amountNight!,
+            );
+
+            results.push({
+              allocationId: action.allocationId,
+              walletIndex: action.walletIndex,
+              op: action.op,
+              status: "executed",
+              txId,
+            });
+            cacheBalances.set(
+              action.walletIndex,
+              (cacheBalances.get(action.walletIndex) ?? 0n) - action.amountNight!,
+            );
+            cacheBalances.set(
+              0,
+              (cacheBalances.get(0) ?? 0n) + action.amountNight!,
+            );
             continue;
           }
 
@@ -813,146 +1034,70 @@ export async function reconcileDustAllocation(
             allocationId: action.allocationId,
             walletIndex: action.walletIndex,
             op: action.op,
-            status: "executed",
-            txId: registration.txId,
+            status: "skipped",
+            reason: "Unsupported operation",
           });
-          continue;
-        }
-
-        if (action.op === "assign" || action.op === "rebalance") {
-          const targetWallet = await getWallet(action.walletIndex);
-          const receiverAddress = targetWallet.unshieldedKeystore
-            .getBech32Address()
-            .toString();
-          const senderBaseline = await getWalletState(mainWallet, {
-            timeoutMs,
-          });
-          const receiverBaseline = await getWalletState(targetWallet, {
-            timeoutMs,
-          });
-
-          const txId = await sendUnshieldedToken(
-            mainWallet,
-            receiverAddress,
-            action.amountNight!,
-          );
-
-          await waitForWalletSyncAdvance(mainWallet, {
-            baselineState: senderBaseline,
-            timeoutMs,
-            txId,
-          });
-          await waitForWalletSyncAdvance(targetWallet, {
-            baselineState: receiverBaseline,
-            timeoutMs,
-            txId,
-          });
-
-          results.push({
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error);
+          const failure: DustPlanExecutionResult = {
             allocationId: action.allocationId,
             walletIndex: action.walletIndex,
             op: action.op,
-            status: "executed",
-            txId,
-          });
-          cacheBalances.set(
-            action.walletIndex,
-            (cacheBalances.get(action.walletIndex) ?? 0n) + action.amountNight!,
-          );
-          cacheBalances.set(
-            0,
-            (cacheBalances.get(0) ?? 0n) - action.amountNight!,
-          );
-          continue;
-        }
+            status: "failed",
+            reason,
+          };
+          results.push(failure);
 
-        if (action.op === "sweep") {
-          const sourceWallet = await getWallet(action.walletIndex);
-          const sourceBaseline = await getWalletState(sourceWallet, {
-            timeoutMs,
-          });
-          const receiverBaseline = await getWalletState(mainWallet, {
-            timeoutMs,
-          });
-
-          const txId = await sendUnshieldedToken(
-            sourceWallet,
-            mainAddress,
-            action.amountNight!,
-          );
-
-          await waitForWalletSyncAdvance(sourceWallet, {
-            baselineState: sourceBaseline,
-            timeoutMs,
-            txId,
-          });
-          await waitForWalletSyncAdvance(mainWallet, {
-            baselineState: receiverBaseline,
-            timeoutMs,
-            txId,
-          });
-
-          results.push({
-            allocationId: action.allocationId,
-            walletIndex: action.walletIndex,
-            op: action.op,
-            status: "executed",
-            txId,
-          });
-          cacheBalances.set(
-            action.walletIndex,
-            (cacheBalances.get(action.walletIndex) ?? 0n) - action.amountNight!,
-          );
-          cacheBalances.set(
-            0,
-            (cacheBalances.get(0) ?? 0n) + action.amountNight!,
-          );
-          continue;
-        }
-
-        results.push({
-          allocationId: action.allocationId,
-          walletIndex: action.walletIndex,
-          op: action.op,
-          status: "skipped",
-          reason: "Unsupported operation",
-        });
-      } catch (error) {
-        const reason = error instanceof Error ? error.message : String(error);
-        const failure: DustPlanExecutionResult = {
-          allocationId: action.allocationId,
-          walletIndex: action.walletIndex,
-          op: action.op,
-          status: "failed",
-          reason,
-        };
-        results.push(failure);
-
-        if (!continueOnError) {
-          throw new Error(
-            `Failed to execute action ${action.op} for allocation '${action.allocationId}' (wallet ${action.walletIndex}): ${reason}`,
-          );
+          if (!continueOnError) {
+            throw new Error(
+              `Failed to execute action ${action.op} for allocation '${action.allocationId}' (wallet ${action.walletIndex}): ${reason}`,
+            );
+          }
         }
       }
+
+      if (results.some((result) => result.status === "failed")) {
+        await invalidateDustWalletBalanceCache(
+          config,
+          `execution request ${requestId} had failed actions`,
+        );
+        return {
+          requestId,
+          results,
+        };
+      }
+
+      await writeDustWalletBalanceCache(config, {
+        updatedAt: new Date().toISOString(),
+        serviceDustAddress: existingCache?.serviceDustAddress,
+        balances: Object.fromEntries(
+          [...cacheBalances.entries()]
+            .filter(([walletIndex]) => walletIndex >= 0)
+            .map(([walletIndex, balance]) => [
+              walletIndex.toString(),
+              balance.toString(),
+            ]),
+        ),
+      });
+
+      return {
+        requestId,
+        results,
+      };
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      try {
+        await invalidateDustWalletBalanceCache(
+          config,
+          `execution request ${requestId} threw: ${reason}`,
+        );
+      } catch (invalidateError) {
+        console.warn(
+          `[dust:cache] failed to invalidate wallet balance cache after error: ${String(invalidateError)}`,
+        );
+      }
+      throw error;
     }
-
-    await writeDustWalletBalanceCache(config, {
-      updatedAt: new Date().toISOString(),
-      serviceDustAddress: existingCache?.serviceDustAddress,
-      balances: Object.fromEntries(
-        [...cacheBalances.entries()]
-          .filter(([walletIndex]) => walletIndex >= 0)
-          .map(([walletIndex, balance]) => [
-            walletIndex.toString(),
-            balance.toString(),
-          ]),
-      ),
-    });
-
-    return {
-      requestId,
-      results,
-    };
   } finally {
     for (const [walletIndex, wallet] of walletCache) {
       try {
@@ -970,6 +1115,7 @@ export async function estimateCoinAmountForDustTarget(
   targetSpecks: bigint,
   options?: {
     targetWindowMs?: number;
+    targetPeakPosition?: DustTargetPeakPosition;
     params?: DustNetworkParameters;
     config?: MidnightConfig;
     timeoutMs?: number;
@@ -977,6 +1123,8 @@ export async function estimateCoinAmountForDustTarget(
 ): Promise<bigint> {
   const targetWindowMs =
     options?.targetWindowMs ?? DEFAULT_DUST_TARGET_WINDOW_MS;
+  const targetPeakPosition =
+    options?.targetPeakPosition ?? DEFAULT_DUST_TARGET_PEAK_POSITION;
   const params =
     options?.params ??
     (options?.config
@@ -986,8 +1134,7 @@ export async function estimateCoinAmountForDustTarget(
         })
       : getDefaultDustNetworkParameters());
 
-  console.log(
-    `Network Parameters: nightDustRatio=${params.nightDustRatio.toString()} timeToCapSeconds=${params.timeToCapSeconds.toString()} generationDecayRate=${params.generationDecayRate.toString()} dustGracePeriodSeconds=${params.dustGracePeriodSeconds.toString()}`,
-  );
-  return estimateStarsForDustTarget(targetSpecks, targetWindowMs, params);
+  return estimateStarsForDustTarget(targetSpecks, targetWindowMs, params, {
+    peakPosition: targetPeakPosition,
+  });
 }

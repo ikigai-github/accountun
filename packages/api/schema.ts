@@ -59,6 +59,7 @@ export const DustReconcileRequestSchema = z
         timeoutMs: z.number().int().positive().optional(),
         refreshBalances: z.boolean().optional(),
         targetWindowMs: z.number().int().positive().optional(),
+        targetPeakPosition: z.enum(["midpoint", "end"]).optional(),
         rebalanceTolerancePercent: U64String.optional(),
       })
       .optional(),
