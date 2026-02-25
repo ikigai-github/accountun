@@ -42,10 +42,8 @@ export const RegisterRequestSchema = z
 
 export const DustReconcileAllocationSchema = z
   .object({
-    allocationId: z.string(),
     dustAddress: z.string(),
     targetSpecks: U64String,
-    priority: z.number().int().optional(),
   })
   .openapi("DustReconcileAllocation");
 
@@ -59,7 +57,6 @@ export const DustReconcileRequestSchema = z
         timeoutMs: z.number().int().positive().optional(),
         refreshBalances: z.boolean().optional(),
         targetWindowMs: z.number().int().positive().optional(),
-        targetPeakPosition: z.enum(["midpoint", "end"]).optional(),
         rebalanceTolerancePercent: U64String.optional(),
       })
       .optional(),
@@ -68,9 +65,9 @@ export const DustReconcileRequestSchema = z
 
 export const DustReconcileActionSchema = z
   .object({
-    allocationId: z.string(),
     walletIndex: z.number().int(),
     op: z.enum(["assign", "rebalance", "register", "sweep", "noop"]),
+    dustAddress: z.string().optional(),
     amountNight: U64String.optional(),
     reason: z.string().optional(),
   })
@@ -78,9 +75,9 @@ export const DustReconcileActionSchema = z
 
 export const DustReconcileExecutionResultSchema = z
   .object({
-    allocationId: z.string(),
     walletIndex: z.number().int(),
     op: z.enum(["assign", "rebalance", "register", "sweep", "noop"]),
+    dustAddress: z.string().optional(),
     status: z.enum(["executed", "skipped", "failed"]),
     txId: z.string().optional(),
     reason: z.string().optional(),

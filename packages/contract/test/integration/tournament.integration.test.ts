@@ -9,6 +9,7 @@ import {
   payoutReady,
   planPayout,
   postResults,
+  readTournamentOnChainState,
   recordFunding,
   recordReceipt,
   registerTournament,
@@ -58,6 +59,32 @@ describe("tournament contract integration", () => {
 
       const fixture = createTournamentLifecycleFixture();
 
+      const assertOnChainState = async (
+        label: string,
+        expectedStateName:
+          | "None"
+          | "Registered"
+          | "ResultPosted"
+          | "PayoutReady"
+          | "PayoutComplete",
+        expectedPlacements: string[] = [],
+      ) => {
+        const snapshot = await readTournamentOnChainState(
+          deployed,
+          providers,
+          fixture.tournamentId,
+        );
+
+        console.info(
+          `[integration] ${label}: state=${snapshot.stateName} placements=${snapshot.placements.length}`,
+        );
+
+        expect(snapshot.stateName).toBe(expectedStateName);
+        expect(snapshot.placements).toEqual(expectedPlacements);
+      };
+
+      await assertOnChainState("before register", "None");
+
       console.info("[integration] register tournament");
       const registered = await registerTournament(
         deployed,
@@ -65,6 +92,7 @@ describe("tournament contract integration", () => {
         fixture.cashAssetName,
       );
       expect(registered.public.txId).toBeTruthy();
+      await assertOnChainState("after register", "Registered");
 
       console.info("[integration] record funding");
       const fundingTx = await recordFunding(
@@ -73,6 +101,7 @@ describe("tournament contract integration", () => {
         fixture.funding,
       );
       expect(fundingTx.public.txId).toBeTruthy();
+      await assertOnChainState("after funding", "Registered");
 
       console.info("[integration] post results");
       const resultsTx = await postResults(
@@ -81,6 +110,7 @@ describe("tournament contract integration", () => {
         fixture.results,
       );
       expect(resultsTx.public.txId).toBeTruthy();
+      await assertOnChainState("after results", "ResultPosted", fixture.results);
 
       console.info("[integration] plan payout 1/2");
       const payoutOneTx = await planPayout(
@@ -101,6 +131,7 @@ describe("tournament contract integration", () => {
       console.info("[integration] mark payout ready");
       const readyTx = await payoutReady(deployed, fixture.tournamentId);
       expect(readyTx.public.txId).toBeTruthy();
+      await assertOnChainState("after ready", "PayoutReady", fixture.results);
 
       console.info("[integration] record receipt 1/2");
       const receiptOneTx = await recordReceipt(
@@ -124,6 +155,7 @@ describe("tournament contract integration", () => {
         fixture.tournamentId,
       );
       expect(completeTx.public.txId).toBeTruthy();
+      await assertOnChainState("after complete", "PayoutComplete", fixture.results);
     } finally {
       await wallet.wallet.stop();
     }

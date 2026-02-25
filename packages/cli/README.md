@@ -22,6 +22,7 @@ bun cli -h
 │   fund [options]      Record funding for a tournament
 │   cancel [options]    Cancel a registered tournament
 │   results [options]   Post the results of a tournament
+│   state [options]     Read a tournament state and placements from chain
 │   plan [options]      Plan the payouts for a tournament
 │   receipts [options]  Record the receipts for a tournament 
 │   complete [options]  Complete a registered tournament
@@ -74,6 +75,16 @@ bun cli wallet --index 1 --reward-address stake_test1...
 
 Note: the indexer status query is keyed by Cardano reward address (`stake...`), not by unshielded public key.
 
+### Reading tournament state
+
+Use `bun cli state --id <uuid>` to read the tournament state directly from on-chain ledger data.
+
+If the state is `ResultPosted`, `PayoutReady`, or `PayoutComplete`, the command also prints the result placements in order.
+
+```sh
+bun cli state --id 11111111-2222-3333-4444-555555555555
+```
+
 ### Planning and executing dust allocations
 
 Use `bun cli dust` to plan dust targets in Specks and immediately execute the resulting actions.
@@ -82,7 +93,7 @@ If `--csv` is omitted, the command plans with no requested allocations, then exe
 
 Use `--refresh-balances` to force a chain read of all relevant wallet balances and refresh the local balance cache before planning.
 
-Use `--target-window-ms` to control how quickly each allocation should reach its `targetSpecks` estimate (default: 1 hour).
+Use `--target-window-ms` to control how quickly each allocation should reach its `targetSpecks` estimate (default: 1 day).
 
 Example (allocate everything back to service dust address):
 
@@ -101,17 +112,15 @@ bun cli dust \
 
 `dust-allocations.csv` should include columns:
 
-- `allocationId` (required)
 - `dustAddress` (required)
 - `targetSpecks` (required)
-- `priority` (optional)
 
 Example CSV:
 
 ```sh
-allocationId,dustAddress,targetSpecks,priority
-player-1,<bech32m-dust-address-1>,1000000,1
-player-2,<bech32m-dust-address-2>,500000,2
+dustAddress,targetSpecks
+<bech32m-dust-address-1>,1000000
+<bech32m-dust-address-2>,500000
 ```
 
 
@@ -166,5 +175,3 @@ The contract address will be saved in a rolling `${STATE_PATH}/${NETWORK}-contra
 ### Interacting wth the contract
 
 Most of the other CLI commands only function with a deployed contract and usually also a registered tournament.   The general command strcture for the commands are `bun cli [command] --id <tournament-id> --other-params`  
-
-

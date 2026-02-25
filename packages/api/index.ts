@@ -364,15 +364,12 @@ app.openapi(
     const payload = context.req.valid("json");
     const client = context.get("client");
     const requests = payload.allocations.map((allocation) => ({
-      allocationId: allocation.allocationId,
       dustAddress: allocation.dustAddress,
       targetSpecks: BigInt(allocation.targetSpecks),
-      priority: allocation.priority,
     }));
     console.log(
       `Reconciling dust allocations for request ID: ${payload.requestId} with ${requests.length} allocation(s)`,
     );
-    console.log("Allocation requests:", requests);
 
     const summary = await planDustAllocations(client.config, requests, {
       requestId: payload.requestId,
@@ -380,7 +377,6 @@ app.openapi(
       mainReservePercent: BigInt(payload.mainReservePercent),
       refreshBalances: payload.options?.refreshBalances,
       targetWindowMs: payload.options?.targetWindowMs,
-      targetPeakPosition: payload.options?.targetPeakPosition,
     });
 
     const execution = await reconcileDustAllocation(
@@ -389,7 +385,6 @@ app.openapi(
       {
         requestId: `${summary.requestId}-execute`,
         timeoutMs: payload.options?.timeoutMs,
-        requests,
       },
     );
 
@@ -404,9 +399,9 @@ app.openapi(
       allocatedSpecks: summary.allocatedSpecks.toString(),
       shortfallSpecks: summary.shortfallSpecks.toString(),
       actions: summary.actions.map((action) => ({
-        allocationId: action.allocationId,
         walletIndex: action.walletIndex,
         op: action.op,
+        dustAddress: action.dustAddress,
         amountNight: action.amountNight?.toString(),
         reason: action.reason,
       })),

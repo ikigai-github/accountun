@@ -145,22 +145,6 @@ describe("wallet unit", () => {
     expect(result).toBe(25n);
   });
 
-  it("estimateCoinAmountForDustTarget can target end of window", async () => {
-    const result = await estimateCoinAmountForDustTarget(100n, {
-      targetWindowMs: 4_000,
-      targetPeakPosition: "end",
-      params: {
-        nightDustRatio: 100n,
-        timeToCapSeconds: 50n,
-        generationDecayRate: 2n,
-        dustGracePeriodSeconds: 0n,
-      },
-    });
-
-    // end of 4s window => each star contributes 8 specks by target point
-    expect(result).toBe(13n);
-  });
-
   it("selectDustCoinsForAmount picks closest eligible coin", async () => {
     const wallet = mockWalletContext(() => ({
       isSynced: true,

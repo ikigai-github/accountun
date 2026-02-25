@@ -9,6 +9,7 @@ import {
   registerFundCommand,
   registerRegisterCommand,
   registerResultsCommand,
+  registerStateCommand,
   registerWalletCommand,
 } from "./commands";
 import { registerPlanCommand } from "./commands/plan";
@@ -29,6 +30,7 @@ registerRegisterCommand(program);
 registerFundCommand(program);
 registerCancelCommand(program);
 registerResultsCommand(program);
+registerStateCommand(program);
 registerPlanCommand(program);
 registerReadyCommand(program);
 registerReceiptsCommand(program);

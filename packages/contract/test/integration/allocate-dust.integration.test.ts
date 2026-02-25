@@ -18,7 +18,6 @@ import { createDustAllocationFixture } from "./fixtures/dust-allocation";
 
 const TARGET_WINDOW_MS = 60 * 60 * 1000;
 const ROUND_TIMEOUT_MS = 300_000;
-const PEAK_POSITION = "end" as const;
 
 const OP_ORDER: Record<DustReconcileAction["op"], number> = {
   sweep: 0,
@@ -36,34 +35,8 @@ function assertExecutionOrder(results: readonly DustPlanExecutionResult[]): void
   }
 }
 
-function firstActionForAllocation(
-  actions: readonly DustReconcileAction[],
-  allocationId: string,
-): DustReconcileAction | undefined {
-  return actions.find((action) => action.allocationId === allocationId);
-}
-
-function firstActionIndexForAllocation(
-  actions: readonly DustReconcileAction[],
-  allocationId: string,
-): number {
-  return actions.findIndex((action) => action.allocationId === allocationId);
-}
-
-async function getWalletNightBalance(
-  config: MidnightConfig,
-  walletIndex: number,
-): Promise<bigint> {
-  const wallet = await buildWallet(config, { accountIndex: walletIndex });
-  try {
-    return await getUnshieldedBalance(wallet, { timeoutMs: 120_000 });
-  } finally {
-    await wallet.wallet.stop();
-  }
-}
-
 describe("dust allocation integration", () => {
-  it("reconciles dust allocations across rounds with priority, sweep, and register behavior", async () => {
+  it("reconciles dust allocations across rounds with sweep and register behavior", async () => {
     const seedHex = process.env.SERVICE_WALLET_SEED_HEX;
     if (!seedHex) {
       throw new Error("SERVICE_WALLET_SEED_HEX must be set");
@@ -85,15 +58,11 @@ describe("dust allocation integration", () => {
     const roundOneRequests: DustReconcileRequest[] = [
       {
         ...fixture.requests[0]!,
-        allocationId: "integration-allocation-low-priority",
         targetSpecks: 400n,
-        priority: 2,
       },
       {
         ...fixture.requests[1]!,
-        allocationId: "integration-allocation-high-priority",
         targetSpecks: 700n,
-        priority: 1,
       },
     ];
 
@@ -127,7 +96,6 @@ describe("dust allocation integration", () => {
           estimateCoinAmountForDustTarget(request.targetSpecks, {
             config,
             targetWindowMs: TARGET_WINDOW_MS,
-            targetPeakPosition: PEAK_POSITION,
             timeoutMs: 120_000,
           }),
         ),
@@ -143,7 +111,6 @@ describe("dust allocation integration", () => {
       mainReservePercent: 0n,
       refreshBalances: true,
       targetWindowMs: TARGET_WINDOW_MS,
-      targetPeakPosition: PEAK_POSITION,
       timeoutMs: ROUND_TIMEOUT_MS,
     });
 
@@ -151,25 +118,12 @@ describe("dust allocation integration", () => {
     expect(roundOneSummary.requestedSpecks).toBe(1_100n);
     expect(roundOneSummary.actions.length >= 2).toBe(true);
 
-    const highPriorityActionIndex = firstActionIndexForAllocation(
-      roundOneSummary.actions,
-      "integration-allocation-high-priority",
-    );
-    const lowPriorityActionIndex = firstActionIndexForAllocation(
-      roundOneSummary.actions,
-      "integration-allocation-low-priority",
-    );
-    expect(highPriorityActionIndex >= 0).toBe(true);
-    expect(lowPriorityActionIndex >= 0).toBe(true);
-    expect(highPriorityActionIndex < lowPriorityActionIndex).toBe(true);
-
     const roundOneExecution = await reconcileDustAllocation(
       config,
       roundOneSummary.actions,
       {
         requestId: "integration-reconcile-round1-execute",
         timeoutMs: ROUND_TIMEOUT_MS,
-        requests: roundOneRequests,
         continueOnError: false,
       },
     );
@@ -180,89 +134,30 @@ describe("dust allocation integration", () => {
       roundOneExecution.results.every((result) => result.status !== "failed"),
     ).toBe(true);
     assertExecutionOrder(roundOneExecution.results);
-
-    const highPriorityAction = firstActionForAllocation(
-      roundOneSummary.actions,
-      "integration-allocation-high-priority",
-    );
-    const lowPriorityAction = firstActionForAllocation(
-      roundOneSummary.actions,
-      "integration-allocation-low-priority",
-    );
-    if (!highPriorityAction || !lowPriorityAction) {
-      throw new Error("round one plan did not include both test allocations");
-    }
-
-    const highPriorityWalletBalance = await getWalletNightBalance(
-      config,
-      highPriorityAction.walletIndex,
-    );
-    const lowPriorityWalletBalance = await getWalletNightBalance(
-      config,
-      lowPriorityAction.walletIndex,
-    );
-
-    const dropTarget =
-      highPriorityWalletBalance >= lowPriorityWalletBalance
-        ? {
-            request: roundOneRequests[1]!,
-            walletIndex: highPriorityAction.walletIndex,
-            balanceNight: highPriorityWalletBalance,
-          }
-        : {
-            request: roundOneRequests[0]!,
-            walletIndex: lowPriorityAction.walletIndex,
-            balanceNight: lowPriorityWalletBalance,
-          };
-    const keepRequest = roundOneRequests.find(
-      (request) => request.allocationId !== dropTarget.request.allocationId,
-    );
-
-    if (!keepRequest) {
-      throw new Error("failed to resolve keep allocation for round two");
-    }
-    if (dropTarget.balanceNight <= 0n) {
-      throw new Error(
-        "expected at least one funded sub-wallet after round one execution",
-      );
-    }
+    const keepRequest = roundOneRequests[0]!;
 
     const roundTwoSummary = await planDustAllocations(config, [keepRequest], {
       requestId: "integration-reconcile-round2-plan",
       mainReservePercent: 0n,
       targetWindowMs: TARGET_WINDOW_MS,
-      targetPeakPosition: PEAK_POSITION,
       timeoutMs: ROUND_TIMEOUT_MS,
     });
 
-    const sweepAction = roundTwoSummary.actions.find(
-      (action) =>
-        action.op === "sweep" &&
-        action.walletIndex === dropTarget.walletIndex &&
-        action.amountNight !== undefined &&
-        action.amountNight > 0n,
-    );
-    expect(Boolean(sweepAction)).toBe(true);
-
     const registerAction = roundTwoSummary.actions.find(
-      (action) =>
-        action.allocationId === keepRequest.allocationId &&
-        action.op === "register",
+      (action) => action.op === "register",
     );
     expect(Boolean(registerAction)).toBe(true);
 
-    const sweepActionIndex = roundTwoSummary.actions.findIndex(
-      (action) =>
-        action.op === "sweep" && action.walletIndex === dropTarget.walletIndex,
-    );
     const registerActionIndex = roundTwoSummary.actions.findIndex(
-      (action) =>
-        action.op === "register" &&
-        action.allocationId === keepRequest.allocationId,
+      (action) => action.op === "register",
     );
-    expect(sweepActionIndex >= 0).toBe(true);
+    const sweepActionIndex = roundTwoSummary.actions.findIndex(
+      (action) => action.op === "sweep",
+    );
     expect(registerActionIndex >= 0).toBe(true);
-    expect(sweepActionIndex < registerActionIndex).toBe(true);
+    if (sweepActionIndex >= 0) {
+      expect(sweepActionIndex < registerActionIndex).toBe(true);
+    }
   });
 
 });

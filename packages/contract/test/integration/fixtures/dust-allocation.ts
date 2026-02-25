@@ -13,12 +13,10 @@ export function createDustAllocationFixture(): DustAllocationFixture {
   return {
     requests: [
       {
-        allocationId: "integration-allocation-1",
         dustAddress: TARGET_DUST_ADDRESS,
         targetSpecks: 1_000n,
       },
       {
-        allocationId: "integration-allocation-2",
         dustAddress: TARGET_DUST_ADDRESS_2,
         targetSpecks: 2_000n,
       },

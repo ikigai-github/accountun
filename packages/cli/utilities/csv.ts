@@ -101,10 +101,8 @@ export async function readCurrencyEntries(
 }
 
 type DustAllocationCsvRow = {
-  allocationId: string;
   dustAddress: string;
   targetSpecks: bigint;
-  priority?: number;
 };
 
 export async function readDustAllocationRequests(
@@ -118,8 +116,6 @@ export async function readDustAllocationRequests(
       switch (column) {
         case "targetSpecks":
           return BigInt(value);
-        case "priority":
-          return value.trim() === "" ? undefined : Number.parseInt(value, 10);
         default:
           return value;
       }
@@ -136,9 +132,6 @@ export async function readDustAllocationRequests(
   }
 
   return results.data.map((row, idx) => {
-    if (!row.allocationId || typeof row.allocationId !== "string") {
-      throw new Error(`Missing allocationId at CSV row ${idx + 2}`);
-    }
     if (!row.dustAddress || typeof row.dustAddress !== "string") {
       throw new Error(`Missing dustAddress at CSV row ${idx + 2}`);
     }
@@ -147,10 +140,8 @@ export async function readDustAllocationRequests(
     }
 
     return {
-      allocationId: row.allocationId,
       dustAddress: row.dustAddress,
       targetSpecks: row.targetSpecks,
-      priority: row.priority,
     };
   });
 }

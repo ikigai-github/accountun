@@ -1,12 +1,38 @@
 import { uuidBytes } from "@accountun/common";
+import { getPublicStates } from "@midnight-ntwrk/midnight-js-contracts";
+import { stringify as uuidStringify } from "uuid";
 import { hashAssetId } from "./asset-id";
 import type {
   CurrencyEntry,
   DeployedContract,
+  Providers,
   RawCurrencyEntry,
 } from "./types";
 import { AccountKind, AssetKind, MAX_PLACEMENTS } from "./constants";
 import { parseCurrencyEntry } from "./conversion";
+import { ledger } from "./managed/contract/index.js";
+
+const TOURNAMENT_STATE_NAMES = [
+  "None",
+  "Registered",
+  "ResultPosted",
+  "PayoutReady",
+  "NoResults",
+  "PayoutComplete",
+  "Cancelled",
+] as const;
+
+type KnownTournamentState = (typeof TOURNAMENT_STATE_NAMES)[number];
+
+export type TournamentStateName = KnownTournamentState | "Unknown";
+
+export type TournamentOnChainState = {
+  tournamentId: string;
+  contractAddress: string;
+  state: number;
+  stateName: TournamentStateName;
+  placements: string[];
+};
 
 /**
  * Registers a tournament with the given contract instance
@@ -182,6 +208,46 @@ export async function cancelTournament(
 }
 
 /**
+ * Reads a tournament's public on-chain state and placements from ledger exports.
+ * @param contract The joined deployed contract.
+ * @param providers The providers attached to the active client session.
+ * @param tournamentId The UUID string for the tournament.
+ * @returns The on-chain tournament state snapshot.
+ */
+export async function readTournamentOnChainState(
+  contract: DeployedContract,
+  providers: Providers,
+  tournamentId: string,
+): Promise<TournamentOnChainState> {
+  const tournamentIdBytes = uuidBytes(tournamentId);
+  const contractAddress = contract.deployTxData.public.contractAddress;
+
+  const publicStates = await getPublicStates(
+    providers.publicDataProvider,
+    contractAddress,
+  );
+
+  const publicLedger = ledger(publicStates.contractState.data);
+  const hasState = publicLedger.states.member(tournamentIdBytes);
+  const state = hasState ? publicLedger.states.lookup(tournamentIdBytes) : 0;
+
+  const placements = publicLedger.placements.member(tournamentIdBytes)
+    ? publicLedger.placements
+        .lookup(tournamentIdBytes)
+        .filter((entry) => !isZeroBytes(entry))
+        .map((entry) => uuidStringify(entry))
+    : [];
+
+  return {
+    tournamentId,
+    contractAddress,
+    state,
+    stateName: toTournamentStateName(state),
+    placements,
+  };
+}
+
+/**
  * Type guard for RawCurrencyEntry
  * @param entry the entry to typecheck
  * @returns true if the entry is a RawCurrencyEntry, false otherwise
@@ -218,4 +284,12 @@ function toFixedVectorArray(
   }
 
   return values;
+}
+
+function isZeroBytes(value: Uint8Array): boolean {
+  return value.every((byte) => byte === 0);
+}
+
+function toTournamentStateName(state: number): TournamentStateName {
+  return TOURNAMENT_STATE_NAMES[state] ?? "Unknown";
 }
