@@ -15,3 +15,6 @@ Most interactions with midnight require a proof server running.  For local dev t
 If you have docker installed then running `bun proof-server` will start the proof-server
 
 
+### Deploying
+
+To deploy the current version of accountun just `az login` followed by `az acr login --name accountun` and finally run `bun docker:publish`

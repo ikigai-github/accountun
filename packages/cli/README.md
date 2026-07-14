@@ -39,7 +39,6 @@ AUTH_REPLACEMENT_KEY_HEX='NO-DEFAULT'
 SERVICE_WALLET_SEED_HEX='NO-DEFAULT'
 NETWORK='preprod' # Supported remote defaults: preprod, preview
 NETWORK_MODE='remote' # Can be set to 'local' for local service URI defaults 
-STATE_PATH='.state' # Directory where state data is saved
 
 # Below are defaults if NETWORK_MODE is set to remote
 SUBSTRATE_NODE_URI='https://rpc.preprod.midnight.network'
